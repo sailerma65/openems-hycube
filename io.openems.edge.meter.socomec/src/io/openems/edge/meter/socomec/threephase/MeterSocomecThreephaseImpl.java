@@ -292,7 +292,8 @@ public class MeterSocomecThreephaseImpl extends AbstractSocomecMeter implements 
 	@Override
 	protected void identifiedDirisB30() throws OpenemsException {
 		this.modbusProtocol.addTask(//
-				new FC3ReadRegistersTask(0x480C, Priority.HIGH, //
+				new FC3ReadRegistersTask(0x480A, Priority.HIGH, //
+						m(ElectricityMeter.ChannelId.FREQUENCY, new UnsignedDoublewordElement(0x480A)), //
 						m(ElectricityMeter.ChannelId.VOLTAGE_L1, new UnsignedDoublewordElement(0x480C), SCALE_FACTOR_1), //
 						m(ElectricityMeter.ChannelId.VOLTAGE_L2, new UnsignedDoublewordElement(0x480E), SCALE_FACTOR_1), //
 						m(ElectricityMeter.ChannelId.VOLTAGE_L3, new UnsignedDoublewordElement(0x4810), SCALE_FACTOR_1), //
