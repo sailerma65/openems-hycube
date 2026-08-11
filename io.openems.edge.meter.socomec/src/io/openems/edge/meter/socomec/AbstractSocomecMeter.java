@@ -114,6 +114,10 @@ public abstract class AbstractSocomecMeter extends AbstractOpenemsModbusComponen
 					this.logInfo(this.log, "Identified Socomec Countis E44 meter");
 					this.identifiedCountisE34_E44();
 
+				} else if ( name.startsWith("diris b10")) {
+					this.logInfo(this.log, "Identified Socomec Diris B10 meter");
+					this.identifiedDirisB30();
+
 				} else if (name.startsWith("diris a-10") || name.startsWith("diris a10")) {
 					this.logInfo(this.log, "Identified Socomec Diris A10 meter");
 					this.identifiedDirisA10();
