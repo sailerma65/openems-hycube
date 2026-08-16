@@ -3,6 +3,7 @@ package io.openems.edge.hycube.pvinverter;
 import org.osgi.service.metatype.annotations.AttributeDefinition;
 import org.osgi.service.metatype.annotations.ObjectClassDefinition;
 
+import io.openems.common.types.MeterType;
 import io.openems.edge.common.startstop.StartStopConfig;
 import io.openems.edge.common.type.Phase.SingleOrAllPhase;
 import io.openems.edge.hycube.enums.DeviceType;

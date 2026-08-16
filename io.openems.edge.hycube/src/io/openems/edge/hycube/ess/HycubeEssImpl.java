@@ -1,10 +1,5 @@
 package io.openems.edge.hycube.ess;
 
-import static io.openems.edge.bridge.modbus.api.ElementToChannelConverter.SCALE_FACTOR_1;
-import static io.openems.edge.bridge.modbus.api.ElementToChannelConverter.SCALE_FACTOR_1_AND_INVERT;
-import static io.openems.edge.bridge.modbus.api.ElementToChannelConverter.SCALE_FACTOR_2;
-import static io.openems.edge.bridge.modbus.api.ElementToChannelConverter.SCALE_FACTOR_MINUS_1;
-import static io.openems.edge.bridge.modbus.api.ElementToChannelConverter.SCALE_FACTOR_MINUS_2;
 import static io.openems.edge.common.channel.ChannelUtils.setValue;
 import static io.openems.edge.common.event.EdgeEventConstants.TOPIC_CYCLE_BEFORE_CONTROLLERS;
 import static io.openems.edge.common.event.EdgeEventConstants.TOPIC_CYCLE_BEFORE_PROCESS_IMAGE;
@@ -13,13 +8,11 @@ import static io.openems.edge.ess.power.api.Pwr.ACTIVE;
 import static io.openems.edge.ess.power.api.Pwr.REACTIVE;
 import static io.openems.edge.ess.power.api.Relationship.EQUALS;
 import static org.osgi.service.component.annotations.ConfigurationPolicy.REQUIRE;
-import static org.osgi.service.component.annotations.ReferenceCardinality.MANDATORY;
 import static org.osgi.service.component.annotations.ReferenceCardinality.OPTIONAL;
-import static org.osgi.service.component.annotations.ReferencePolicy.DYNAMIC;
 import static org.osgi.service.component.annotations.ReferencePolicy.STATIC;
 import static org.osgi.service.component.annotations.ReferencePolicyOption.GREEDY;
 
-import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 
 import org.osgi.service.cm.ConfigurationAdmin;
 import org.osgi.service.component.ComponentContext;
@@ -34,41 +27,16 @@ import org.osgi.service.metatype.annotations.Designate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import io.openems.common.channel.AccessMode;
 import io.openems.common.exceptions.OpenemsError.OpenemsNamedException;
 import io.openems.common.exceptions.OpenemsException;
-import io.openems.edge.battery.api.Battery;
-import io.openems.edge.battery.pylontech.us2000C.PylontechUS2000CBattery;
-import io.openems.edge.batteryinverter.api.BatteryInverterConstraint;
 import io.openems.edge.batteryinverter.api.ManagedSymmetricBatteryInverter;
-import io.openems.edge.batteryinverter.api.OffGridBatteryInverter;
-import io.openems.edge.batteryinverter.api.SymmetricBatteryInverter;
-import io.openems.edge.batteryinverter.api.OffGridBatteryInverter.TargetGridMode;
-import io.openems.edge.bridge.modbus.api.AbstractOpenemsModbusComponent;
-import io.openems.edge.bridge.modbus.api.BridgeModbus;
-import io.openems.edge.bridge.modbus.api.ModbusComponent;
-import io.openems.edge.bridge.modbus.api.ModbusProtocol;
-import io.openems.edge.bridge.modbus.api.element.DummyRegisterElement;
-import io.openems.edge.bridge.modbus.api.element.SignedDoublewordElement;
-import io.openems.edge.bridge.modbus.api.element.SignedWordElement;
-import io.openems.edge.bridge.modbus.api.element.UnsignedDoublewordElement;
-import io.openems.edge.bridge.modbus.api.element.UnsignedWordElement;
-import io.openems.edge.bridge.modbus.api.task.FC16WriteRegistersTask;
-import io.openems.edge.bridge.modbus.api.task.FC3ReadRegistersTask;
+import io.openems.edge.bridge.modbus.api.ElementToChannelConverter;
 import io.openems.edge.common.channel.Channel;
 import io.openems.edge.common.channel.value.Value;
 import io.openems.edge.common.component.AbstractOpenemsComponent;
 import io.openems.edge.common.component.ComponentManager;
 import io.openems.edge.common.component.OpenemsComponent;
-import io.openems.edge.common.modbusslave.ModbusSlave;
-import io.openems.edge.common.modbusslave.ModbusSlaveNatureTable;
-import io.openems.edge.common.modbusslave.ModbusSlaveTable;
-import io.openems.edge.common.modbusslave.ModbusType;
-import io.openems.edge.common.startstop.StartStop;
-import io.openems.edge.common.startstop.StartStoppable;
 import io.openems.edge.common.sum.GridMode;
-import io.openems.edge.common.taskmanager.Priority;
-import io.openems.edge.common.type.Phase;
 import io.openems.edge.common.type.Phase.SinglePhase;
 import io.openems.edge.ess.api.AsymmetricEss;
 import io.openems.edge.ess.api.ManagedAsymmetricEss;
@@ -78,16 +46,9 @@ import io.openems.edge.ess.api.SinglePhaseEss;
 import io.openems.edge.ess.api.SymmetricEss;
 import io.openems.edge.ess.power.api.Constraint;
 import io.openems.edge.ess.power.api.Power;
-import io.openems.edge.hycube.ess.Config;
-import io.openems.edge.hycube.ess.HycubeEss.ChannelId;
 import io.openems.edge.hycube.batteryinverter.HycubeBatteryInverter;
 import io.openems.edge.hycube.batteryinverter.HycubeBatteryInverterImpl;
-import io.openems.edge.hycube.enums.DeviceType;
 import io.openems.edge.hycube.enums.EnableDisable;
-import io.openems.edge.pvinverter.api.ManagedSymmetricPvInverter;
-import io.openems.edge.timedata.api.Timedata;
-import io.openems.edge.timedata.api.TimedataProvider;
-import io.openems.edge.timedata.api.utils.CalculateEnergyFromPower;
 
 /**
  * Implementation of the Hycube ESS component.
@@ -98,14 +59,19 @@ import io.openems.edge.timedata.api.utils.CalculateEnergyFromPower;
 @Component(//
 		name = "Hycube.Ess", //
 		immediate = true, //
-		configurationPolicy = REQUIRE //
+		configurationPolicy = REQUIRE, //
+		service = { 
+			            SymmetricEss.class,          // <-- ZWINGEND ERFORDERLICH für Core.Sum
+			            ManagedSymmetricEss.class,   // (Falls steuerbar)
+			            OpenemsComponent.class       // Basisschnittstelle
+		}
 )
 @EventTopics({ //
 		TOPIC_CYCLE_BEFORE_PROCESS_IMAGE, //
 		TOPIC_CYCLE_BEFORE_CONTROLLERS //
 })
 public class HycubeEssImpl extends AbstractOpenemsComponent
-		implements HycubeEss, ManagedSinglePhaseEss, SinglePhaseEss, ManagedSymmetricEss, AsymmetricEss,
+		implements HycubeEss, ManagedSinglePhaseEss,  EventHandler, SinglePhaseEss, ManagedSymmetricEss, AsymmetricEss,
 		ManagedAsymmetricEss, OpenemsComponent {
 
 	/*
@@ -206,9 +172,6 @@ SET_ACTIVE_POWER_L1_EQUALS
 			return;
 		}
 
-		// Set initial values from config
-		this._setMaxApparentPower(config.maxApparentPower());
-
 		this.singlePhase = switch (config.phase()) {
 		case L1 -> SinglePhase.L1;
 		case L2 -> SinglePhase.L2;
@@ -233,16 +196,29 @@ SET_ACTIVE_POWER_L1_EQUALS
 			return;
 		}
 
-		this._setMaxApparentPower(this.config.maxApparentPower());
+		io.openems.edge.common.channel.ChannelId powerChannel = switch (config.phase()) {
+		case L1 -> AsymmetricEss.ChannelId.ACTIVE_POWER_L1;
+		case L2 -> AsymmetricEss.ChannelId.ACTIVE_POWER_L2;
+		case L3 -> AsymmetricEss.ChannelId.ACTIVE_POWER_L3;
+		default -> {
+			this.logError(this.log, "ESS->Hycube ESS supports only 1 phase ");
+			yield null;
+		}
+		};
 
-		// TODO kommt aus config
-				if (getMaxApparentPower().get() != null) {
-					Integer maxApparentPower = getMaxApparentPower().get();
-					this._setMaxApparentPower(maxApparentPower);
-				} else {
-					this.logError(this.log, "ESS->BatteryInverter max. apparent power not set ");
-				}
+		addCopyListener( batteryInverter.getActivePowerChannel(), powerChannel, ElementToChannelConverter.DIRECT_1_TO_1 );
+		addCopyListener( batteryInverter.getActivePowerChannel(), SymmetricEss.ChannelId.ACTIVE_POWER, ElementToChannelConverter.DIRECT_1_TO_1 );
 
+		this._setMaxApparentPower(batteryInverter.getMaxApparentPower().get());
+
+		addCopyListener( batteryInverter.getMaxApparentPowerChannel(), SymmetricEss.ChannelId.MAX_APPARENT_POWER, ElementToChannelConverter.DIRECT_1_TO_1 );
+
+		addCopyListener( hyBatteryInverter.getSocChannel(), SymmetricEss.ChannelId.SOC, ElementToChannelConverter.DIRECT_1_TO_1 );
+
+		addCopyListener( hyBatteryInverter.getCapacityChannel(), SymmetricEss.ChannelId.CAPACITY, ElementToChannelConverter.DIRECT_1_TO_1 );
+
+
+	//	addCopyListener( batteryInverter.getVoltageChannel(), ManagedSymmetricEss.ChannelId., null);
 /* channels to be provided:
 				ALLOWED_CHARGE_POWER
 				ALLOWED_DISCHARGE_POWER
@@ -382,6 +358,32 @@ STATE
 		this.operationalValuesOk = true;
 	}
 
+	/**
+	 * Adds a Copy-Listener. It listens on setNextValue() and copies the value to
+	 * the target channel.
+	 *
+	 * @param <T>             the Channel type
+	 * @param sourceChannel   the source Channel
+	 * @param targetChannelId the target ChannelId
+	 */
+	private <T> void addCopyListener(Channel<T> sourceChannel,
+			io.openems.edge.common.channel.ChannelId targetChannelId, ElementToChannelConverter i_converter ) {
+		Consumer<Value<T>> callback = value -> {
+			Channel<T> targetChannel = this.channel(targetChannelId);
+			T raw = value.get();
+			
+			raw = ( T )i_converter.channelToElement(raw);
+
+			value = new Value<T>( sourceChannel, raw );
+			
+			targetChannel.setNextValue(value);
+		};
+		sourceChannel.onSetNextValue(callback);
+		callback.accept(sourceChannel.getNextValue());
+	}
+
+
+	
 	/**
 	 * Applies power setpoints for asymmetric ESS operation.
 	 *

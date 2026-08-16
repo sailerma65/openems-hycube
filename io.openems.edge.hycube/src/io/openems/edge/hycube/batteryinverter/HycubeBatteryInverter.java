@@ -62,6 +62,20 @@ public interface HycubeBatteryInverter extends OffGridBatteryInverter, ManagedSy
 		RUN_FAILED(Doc.of(FAULT)//
 				.text("Running the component logic failed")), //
 
+		/**
+		 * State of Charge.
+		 *
+		 * <ul>
+		 * <li>Interface: Battery
+		 * <li>Type: Integer
+		 * <li>Unit: %
+		 * <li>Range: 0..100
+		 * </ul>
+		 */
+		SOC(Doc.of(OpenemsType.INTEGER) //
+				.unit(Unit.PERCENT) //
+				.persistencePriority(PersistencePriority.HIGH)), //
+
 		// ================= System Info =================
 		SERIAL_NUMBER(Doc.of(STRING)//
 				.text("Serial number of the Hycube/Sermatec inverter")), //
@@ -85,17 +99,44 @@ public interface HycubeBatteryInverter extends OffGridBatteryInverter, ManagedSy
 		SOLAR2_POWER(Doc.of(INTEGER)
 				.unit(Unit.WATT).text("Solar2 power")),
 
+		SOLAR_SUM_POWER(Doc.of(INTEGER)
+				.unit(Unit.WATT).text("Total solar power")),
+
 		INVERTER_L1_VOLTAGE( Doc.of(INTEGER)
-				.unit(Unit.DEZIVOLT).text("Inverter voltage")),
+				.unit(Unit.DEZIVOLT).text("Inverter voltage L1")),
 		
+		INVERTER_L2_VOLTAGE( Doc.of(INTEGER)
+				.unit(Unit.DEZIVOLT).text("Inverter voltage L2")),
+
+		INVERTER_L3_VOLTAGE( Doc.of(INTEGER)
+				.unit(Unit.DEZIVOLT).text("Inverter voltage L3")),
+
 		INVERTER_L1_CURRENT( Doc.of(INTEGER)
-				.unit(Unit.DEZIAMPERE).text("Inverter current")),
+				.unit(Unit.DEZIAMPERE).text("Inverter current L1")),
 		
+		INVERTER_L2_CURRENT( Doc.of(INTEGER)
+				.unit(Unit.DEZIAMPERE).text("Inverter current L2")),
+
+		INVERTER_L3_CURRENT( Doc.of(INTEGER)
+				.unit(Unit.DEZIAMPERE).text("Inverter current L3")),
+
 		GRID_L1_VOLTAGE( Doc.of(INTEGER)
-				.unit(Unit.DEZIVOLT).text("Grid voltage")),
+				.unit(Unit.DEZIVOLT).text("Grid voltage L1")),
 		
 		GRID_L1_CURRENT( Doc.of(INTEGER)
-				.unit(Unit.DEZIAMPERE).text("Grid current")),
+				.unit(Unit.DEZIAMPERE).text("Grid current L1")),
+		
+		GRID_L2_VOLTAGE( Doc.of(INTEGER)
+				.unit(Unit.DEZIVOLT).text("Grid voltage L2")),
+		
+		GRID_L2_CURRENT( Doc.of(INTEGER)
+				.unit(Unit.DEZIAMPERE).text("Grid current L2")),
+		
+		GRID_L3_VOLTAGE( Doc.of(INTEGER)
+				.unit(Unit.DEZIVOLT).text("Grid voltage L3")),
+		
+		GRID_L3_CURRENT( Doc.of(INTEGER)
+				.unit(Unit.DEZIAMPERE).text("Grid current L3")),
 		
 		GRID_FREQUENCY( Doc.of(INTEGER)
 				.unit(Unit.MILLIHERTZ).text("Grid frequency")),
@@ -107,6 +148,16 @@ public interface HycubeBatteryInverter extends OffGridBatteryInverter, ManagedSy
 				.unit(WATT)//
 				.persistencePriority(HIGH)//
 				.text("Grid power L1. Positive=Import; Negative=Export")), //
+
+		GRID_POWER_L2(Doc.of(INTEGER)//
+				.unit(WATT)//
+				.persistencePriority(HIGH)//
+				.text("Grid power L2. Positive=Import; Negative=Export")), //
+
+		GRID_POWER_L3(Doc.of(INTEGER)//
+				.unit(WATT)//
+				.persistencePriority(HIGH)//
+				.text("Grid power L3. Positive=Import; Negative=Export")), //
 
 		// ================= Grid Power =================
 		GRID_REACTIVE_POWER_L1(Doc.of(INTEGER)//
@@ -124,10 +175,6 @@ public interface HycubeBatteryInverter extends OffGridBatteryInverter, ManagedSy
 		BATTERY_VOLTAGE(Doc.of(INTEGER)//
 				.unit(Unit.DEZIVOLT)//
 				.text("Battery current")),
-		
-		BATTERY_POWER(Doc.of(INTEGER)// Ist-Wert
-				.unit(Unit.WATT)//
-				.text("Battery power")),
 		
 		SET_TARGET_BATTERY_POWER(Doc.of(INTEGER)// Soll-Wert
 				.unit(Unit.WATT)//
@@ -151,11 +198,20 @@ public interface HycubeBatteryInverter extends OffGridBatteryInverter, ManagedSy
 		LOAD_OUTPUT_VOLTAGE_L1(Doc.of(INTEGER)//
 				.unit(Unit.DEZIVOLT).text("Load Ouput voltage L1")),
 
-		LOAD_OUTPUT_FREQUENCY(Doc.of(INTEGER)//
-				.unit(Unit.MILLIHERTZ).text("Load Ouput frequency")),
-		
+		LOAD_OUTPUT_VOLTAGE_L2(Doc.of(INTEGER)//
+				.unit(Unit.DEZIVOLT).text("Load Ouput voltage L2")),
+
+		LOAD_OUTPUT_VOLTAGE_L3(Doc.of(INTEGER)//
+				.unit(Unit.DEZIVOLT).text("Load Ouput voltage L3")),
+
 		LOAD_OUTPUT_CURRENT_L1(Doc.of(INTEGER)//
 				.unit(Unit.DEZIAMPERE).text("Load Ouput current L1")),
+
+		LOAD_OUTPUT_CURRENT_L2(Doc.of(INTEGER)//
+				.unit(Unit.DEZIAMPERE).text("Load Ouput current L2")),
+
+		LOAD_OUTPUT_CURRENT_L3(Doc.of(INTEGER)//
+				.unit(Unit.DEZIAMPERE).text("Load Ouput current L3")),
 
 		LOAD_OUTPUT_POWER_FACTOR(Doc.of(INTEGER)//
 				.unit(Unit.THOUSANDTH).text("Load Ouput power factor" )),
@@ -165,14 +221,40 @@ public interface HycubeBatteryInverter extends OffGridBatteryInverter, ManagedSy
 						.persistencePriority(HIGH)//
 						.text("Grid power L1. Positive=Import; Negative=Export")), //
 
+		LOAD_POWER_L2(Doc.of(INTEGER)//
+				.unit(WATT)//
+				.persistencePriority(HIGH)//
+				.text("Grid power L2. Positive=Import; Negative=Export")), //
+
+		LOAD_POWER_L3(Doc.of(INTEGER)//
+				.unit(WATT)//
+				.persistencePriority(HIGH)//
+				.text("Grid power L3. Positive=Import; Negative=Export")), //
+		
 		// ================= Grid Power =================
 		LOAD_REACTIVE_POWER_L1(Doc.of(INTEGER)//
 						.unit(Unit.VOLT_AMPERE_REACTIVE)//
-						.text("Grid reactive power")), //
+						.text("Grid reactive power L1")), //
+
+		LOAD_REACTIVE_POWER_L2(Doc.of(INTEGER)//
+				.unit(Unit.VOLT_AMPERE_REACTIVE)//
+				.text("Grid reactive power L2")), //
+
+		LOAD_REACTIVE_POWER_L3(Doc.of(INTEGER)//
+				.unit(Unit.VOLT_AMPERE_REACTIVE)//
+				.text("Grid reactive power L3")), //
 
 		LOAD_APPARENT_POWER_L1(Doc.of(INTEGER)//
 						.unit(Unit.VOLT_AMPERE)//
-						.text("Grid reactive power")), //
+						.text("Grid reactive power L1")), //
+
+		LOAD_APPARENT_POWER_L2(Doc.of(INTEGER)//
+				.unit(Unit.VOLT_AMPERE)//
+				.text("Grid reactive power L2")), //
+
+		LOAD_APPARENT_POWER_L3(Doc.of(INTEGER)//
+				.unit(Unit.VOLT_AMPERE)//
+				.text("Grid reactive power L3")), //
 
 		STATUS_WORD_4046(Doc.of(INTEGER)//
 				.text("Status word 0x4046")), //
@@ -295,6 +377,10 @@ public interface HycubeBatteryInverter extends OffGridBatteryInverter, ManagedSy
 		return this.channel(ChannelId.MAX_CHARGE_VOLTAGE);
 	}
 
+	public default IntegerReadChannel getSumSolarPowerChannel() {
+		return this.channel(ChannelId.SOLAR_SUM_POWER );
+	}
+	
 	/**
 	 * Gets the maximum charge power in [W].
 	 *
@@ -343,6 +429,77 @@ public interface HycubeBatteryInverter extends OffGridBatteryInverter, ManagedSy
 		return this.getLoadOutputPowerL1Channel().value();
 	}
 
+	public default IntegerReadChannel getGridOutputPowerL2Channel() {
+		return this.channel(ChannelId.GRID_POWER_L2);
+	}
+	
+	public default IntegerReadChannel getLoadOutputPowerL2Channel() {
+		return this.channel(ChannelId.LOAD_POWER_L2 );
+	}
+	
+	public default Value<Integer> getGridOutputPowerL2(){
+		return this.getGridOutputPowerL2Channel().value();
+	}
+
+	public default Value<Integer> getLoadOutputPowerL2(){
+		return this.getLoadOutputPowerL2Channel().value();
+	}
+
+	public default IntegerReadChannel getGridOutputPowerL3Channel() {
+		return this.channel(ChannelId.GRID_POWER_L3);
+	}
+	
+	public default IntegerReadChannel getLoadOutputPowerL3Channel() {
+		return this.channel(ChannelId.LOAD_POWER_L3 );
+	}
+	
+	public default Value<Integer> getGridOutputPowerL3(){
+		return this.getGridOutputPowerL3Channel().value();
+	}
+
+	public default Value<Integer> getLoadOutputPowerL3(){
+		return this.getLoadOutputPowerL3Channel().value();
+	}
+
+	public default IntegerReadChannel getGridVoltageChannelL1(){
+		return this.channel(ChannelId.GRID_L1_VOLTAGE );
+	}
+
+	public default IntegerReadChannel getGridVoltageChannelL2(){
+		return this.channel(ChannelId.GRID_L2_VOLTAGE );
+	}
+
+	public default IntegerReadChannel getGridVoltageChannelL3(){
+		return this.channel(ChannelId.GRID_L3_VOLTAGE );
+	}
+
+	public default IntegerReadChannel getGridCurrentChannelL1(){
+		return this.channel(ChannelId.GRID_L1_CURRENT );
+	}
+
+	public default IntegerReadChannel getGridCurrentChannelL2(){
+		return this.channel(ChannelId.GRID_L2_CURRENT );
+	}
+
+	public default IntegerReadChannel getGridCurrentChannelL3(){
+		return this.channel(ChannelId.GRID_L3_CURRENT );
+	}
+
+	public default IntegerReadChannel getGridPowerChannelL1(){
+		return this.channel(ChannelId.GRID_POWER_L1 );
+	}
+
+	public default IntegerReadChannel getGridPowerChannelL2(){
+		return this.channel(ChannelId.GRID_POWER_L2 );
+	}
+
+	public default IntegerReadChannel getGridPowerChannelL3(){
+		return this.channel(ChannelId.GRID_POWER_L3 );
+	}
+	
+	public default IntegerReadChannel getSocChannel() {
+		return this.channel(ChannelId.SOC );
+	}
 	/**
 	 * Calculates hardware limits from battery and inverter.
 	 *

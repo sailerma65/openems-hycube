@@ -1,20 +1,12 @@
 package io.openems.edge.hycube.pvinverter;
 
-import static io.openems.edge.bridge.modbus.api.ElementToChannelConverter.INVERT;
-import static io.openems.edge.bridge.modbus.api.ElementToChannelConverter.SCALE_FACTOR_1;
-import static io.openems.edge.bridge.modbus.api.ElementToChannelConverter.SCALE_FACTOR_2;
-import static io.openems.edge.bridge.modbus.api.ElementToChannelConverter.SCALE_FACTOR_MINUS_1;
-import static io.openems.edge.bridge.modbus.api.ElementToChannelConverter.SCALE_FACTOR_MINUS_1_AND_INVERT;
-import static io.openems.edge.common.channel.ChannelUtils.setValue;
 import static io.openems.edge.common.event.EdgeEventConstants.TOPIC_CYCLE_AFTER_PROCESS_IMAGE;
 import static io.openems.edge.common.event.EdgeEventConstants.TOPIC_CYCLE_BEFORE_PROCESS_IMAGE;
 import static org.osgi.service.component.annotations.ConfigurationPolicy.REQUIRE;
-import static org.osgi.service.component.annotations.ReferenceCardinality.MANDATORY;
 import static org.osgi.service.component.annotations.ReferenceCardinality.OPTIONAL;
 import static org.osgi.service.component.annotations.ReferencePolicy.STATIC;
 import static org.osgi.service.component.annotations.ReferencePolicyOption.GREEDY;
 
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 import org.osgi.service.cm.ConfigurationAdmin;
@@ -23,57 +15,34 @@ import org.osgi.service.component.annotations.Activate;
 import org.osgi.service.component.annotations.Component;
 import org.osgi.service.component.annotations.Deactivate;
 import org.osgi.service.component.annotations.Reference;
-import org.osgi.service.component.annotations.ReferencePolicy;
+import org.osgi.service.event.Event;
+import org.osgi.service.event.EventHandler;
 import org.osgi.service.event.propertytypes.EventTopics;
 import org.osgi.service.metatype.annotations.Designate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import io.openems.common.channel.AccessMode;
 import io.openems.common.exceptions.OpenemsError.OpenemsNamedException;
-import io.openems.common.exceptions.OpenemsException;
-import io.openems.edge.battery.api.Battery;
-import io.openems.edge.battery.pylontech.powercubem2.PylontechPowercubeM2Battery;
-import io.openems.edge.battery.pylontech.us2000C.PylontechUS2000CBattery;
-import io.openems.edge.batteryinverter.api.BatteryInverterConstraint;
+import io.openems.common.types.MeterType;
 import io.openems.edge.batteryinverter.api.ManagedSymmetricBatteryInverter;
 import io.openems.edge.batteryinverter.api.SymmetricBatteryInverter;
-import io.openems.edge.bridge.modbus.api.AbstractOpenemsModbusComponent;
-import io.openems.edge.bridge.modbus.api.BridgeModbus;
 import io.openems.edge.bridge.modbus.api.ElementToChannelConverter;
 import io.openems.edge.bridge.modbus.api.ModbusComponent;
-import io.openems.edge.bridge.modbus.api.ModbusProtocol;
-import io.openems.edge.bridge.modbus.api.element.DummyRegisterElement;
-import io.openems.edge.bridge.modbus.api.element.SignedWordElement;
-import io.openems.edge.bridge.modbus.api.element.UnsignedDoublewordElement;
-import io.openems.edge.bridge.modbus.api.element.UnsignedWordElement;
-import io.openems.edge.bridge.modbus.api.task.FC3ReadRegistersTask;
-import io.openems.edge.bridge.modbus.api.task.FC6WriteRegisterTask;
 import io.openems.edge.common.channel.Channel;
-import io.openems.edge.common.channel.IntegerWriteChannel;
+import io.openems.edge.common.channel.IntegerReadChannel;
 import io.openems.edge.common.channel.value.Value;
 import io.openems.edge.common.component.AbstractOpenemsComponent;
 import io.openems.edge.common.component.ComponentManager;
 import io.openems.edge.common.component.OpenemsComponent;
-import io.openems.edge.common.modbusslave.ModbusSlave;
-import io.openems.edge.common.modbusslave.ModbusSlaveNatureTable;
-import io.openems.edge.common.modbusslave.ModbusSlaveTable;
-import io.openems.edge.common.modbusslave.ModbusType;
-import io.openems.edge.common.startstop.StartStop;
 import io.openems.edge.common.startstop.StartStoppable;
-import io.openems.edge.common.sum.GridMode;
-import io.openems.edge.common.taskmanager.Priority;
-import io.openems.edge.common.type.Phase.SingleOrAllPhase;
 import io.openems.edge.common.type.Phase.SinglePhase;
-import io.openems.edge.ess.power.api.Power;
-import io.openems.edge.ess.power.api.Pwr;
-import io.openems.edge.ess.power.api.Relationship;
+import io.openems.edge.ess.api.AsymmetricEss;
+import io.openems.edge.ess.api.SymmetricEss;
 import io.openems.edge.hycube.batteryinverter.HycubeBatteryInverterImpl;
-import io.openems.edge.hycube.batteryinverter.statemachine.Context;
 import io.openems.edge.hycube.batteryinverter.statemachine.StateMachine;
 import io.openems.edge.hycube.batteryinverter.statemachine.StateMachine.State;
-import io.openems.edge.hycube.enums.DeviceType;
 import io.openems.edge.hycube.ess.HycubeEss;
+import io.openems.edge.meter.api.ElectricityMeter;
 import io.openems.edge.meter.api.SinglePhaseMeter;
 import io.openems.edge.pvinverter.api.ManagedSymmetricPvInverter;
 
@@ -94,7 +63,7 @@ import io.openems.edge.pvinverter.api.ManagedSymmetricPvInverter;
  */
 @Designate(ocd = Config.class, factory = true)
 @Component(//
-		name = "Hycube.PV-Inverter", //
+		name = "HycubePV-Inverter", //
 		immediate = true, //
 		configurationPolicy = REQUIRE //
 ) //
@@ -103,7 +72,7 @@ import io.openems.edge.pvinverter.api.ManagedSymmetricPvInverter;
 		TOPIC_CYCLE_AFTER_PROCESS_IMAGE //
 })
 public class HycubePvInverterImpl extends AbstractOpenemsComponent implements HycubePvInverter,
-		ManagedSymmetricPvInverter, OpenemsComponent, SinglePhaseMeter {
+		ManagedSymmetricPvInverter,  EventHandler, ElectricityMeter, OpenemsComponent, SinglePhaseMeter {
 
 	private final Logger log = LoggerFactory.getLogger(HycubePvInverterImpl.class);
 
@@ -125,10 +94,8 @@ public class HycubePvInverterImpl extends AbstractOpenemsComponent implements Hy
 	public HycubePvInverterImpl() throws OpenemsNamedException {
 		super(//
 				OpenemsComponent.ChannelId.values(), //
-				SymmetricBatteryInverter.ChannelId.values(), //
-				ManagedSymmetricBatteryInverter.ChannelId.values(), //
-				ModbusComponent.ChannelId.values(), //
-				StartStoppable.ChannelId.values(), //
+				ManagedSymmetricPvInverter.ChannelId.values(), //
+				ElectricityMeter.ChannelId.values(), //
 				HycubePvInverter.ChannelId.values() //
 		);
 	}
@@ -158,10 +125,102 @@ public class HycubePvInverterImpl extends AbstractOpenemsComponent implements Hy
 			return;
 		}
 		
+		io.openems.edge.common.channel.ChannelId meterPowerOtherA;
+		io.openems.edge.common.channel.ChannelId meterPowerOtherB;
+		io.openems.edge.common.channel.ChannelId meterPowerChannel;
+		
+		io.openems.edge.common.channel.ChannelId meterCurrentOtherA;
+		io.openems.edge.common.channel.ChannelId meterCurrentOtherB;
+		io.openems.edge.common.channel.ChannelId meterCurrentChannel;
+		
+		io.openems.edge.common.channel.ChannelId meterVoltageOtherA;
+		io.openems.edge.common.channel.ChannelId meterVoltageOtherB;
+		io.openems.edge.common.channel.ChannelId meterVoltageChannel;
+
+		IntegerReadChannel voltageHycubeChannel;
+
+		switch (config.phase()) {
+		case L1 -> {
+			meterPowerChannel = ElectricityMeter.ChannelId.ACTIVE_POWER_L1;
+			meterPowerOtherA = ElectricityMeter.ChannelId.ACTIVE_POWER_L2;
+			meterPowerOtherB = ElectricityMeter.ChannelId.ACTIVE_POWER_L3;
+
+			meterCurrentChannel = ElectricityMeter.ChannelId.CURRENT_L1;
+			meterCurrentOtherA = ElectricityMeter.ChannelId.CURRENT_L2;
+			meterCurrentOtherB = ElectricityMeter.ChannelId.CURRENT_L3;
+
+			meterVoltageChannel = ElectricityMeter.ChannelId.VOLTAGE_L1;
+			meterVoltageOtherA = ElectricityMeter.ChannelId.VOLTAGE_L2;
+			meterVoltageOtherB = ElectricityMeter.ChannelId.VOLTAGE_L3;
+			
+
+			voltageHycubeChannel = hyBatteryInverter.getGridVoltageChannelL1();
+		}
+		case L2 -> { 
+			meterPowerChannel = ElectricityMeter.ChannelId.ACTIVE_POWER_L2;
+			meterPowerOtherA = ElectricityMeter.ChannelId.ACTIVE_POWER_L1;
+			meterPowerOtherB = ElectricityMeter.ChannelId.ACTIVE_POWER_L3;
+
+			meterCurrentChannel = ElectricityMeter.ChannelId.CURRENT_L2;
+			meterCurrentOtherA = ElectricityMeter.ChannelId.CURRENT_L1;
+			meterCurrentOtherB = ElectricityMeter.ChannelId.CURRENT_L3;
+
+			meterVoltageChannel = ElectricityMeter.ChannelId.VOLTAGE_L2;
+			meterVoltageOtherA = ElectricityMeter.ChannelId.VOLTAGE_L1;
+			meterVoltageOtherB = ElectricityMeter.ChannelId.VOLTAGE_L3;
+			
+
+			voltageHycubeChannel = hyBatteryInverter.getGridVoltageChannelL2();
+		}
+		case L3 -> { 
+			meterPowerChannel = ElectricityMeter.ChannelId.ACTIVE_POWER_L3;
+			meterPowerOtherA = ElectricityMeter.ChannelId.ACTIVE_POWER_L1;
+			meterPowerOtherB = ElectricityMeter.ChannelId.ACTIVE_POWER_L2;
+
+			meterCurrentChannel = ElectricityMeter.ChannelId.CURRENT_L3;
+			meterCurrentOtherA = ElectricityMeter.ChannelId.CURRENT_L1;
+			meterCurrentOtherB = ElectricityMeter.ChannelId.CURRENT_L2;
+
+			meterVoltageChannel = ElectricityMeter.ChannelId.VOLTAGE_L3;
+			meterVoltageOtherA = ElectricityMeter.ChannelId.VOLTAGE_L1;
+			meterVoltageOtherB = ElectricityMeter.ChannelId.VOLTAGE_L2;
+			
+			voltageHycubeChannel = hyBatteryInverter.getGridVoltageChannelL3();
+		}
+		default -> {
+			this.logError(this.log, "Hycube PV Inverter supports only 1 phase ");
+			return;
+		}
+		};
+
+		addCopyListener( hyBatteryInverter.getSumSolarPowerChannel(), ElectricityMeter.ChannelId.ACTIVE_POWER, ElementToChannelConverter.DIRECT_1_TO_1 );
+		addCopyListener( hyBatteryInverter.getSumSolarPowerChannel(), meterPowerChannel, ElementToChannelConverter.DIRECT_1_TO_1 );
+
+		addCopyListener( voltageHycubeChannel, ElectricityMeter.ChannelId.VOLTAGE, ElementToChannelConverter.SCALE_FACTOR_MINUS_2 );
+		addCopyListener( voltageHycubeChannel, meterVoltageChannel, ElementToChannelConverter.SCALE_FACTOR_MINUS_2 );
+		
+		addCopyListener( hyBatteryInverter.getOffGridFrequencyChannel(), ElectricityMeter.ChannelId.FREQUENCY, ElementToChannelConverter.SCALE_FACTOR_3 );
+		
+		this.channel(  meterPowerOtherA ).setNextValue( Integer.valueOf( 0 ) );
+		this.channel(  meterPowerOtherB ).setNextValue( Integer.valueOf( 0 ) );
+		
+		this.channel(  meterCurrentChannel ).setNextValue( Integer.valueOf( 0 ) );
+		this.channel(  meterCurrentOtherA ).setNextValue( Integer.valueOf( 0 ) );
+		this.channel(  meterCurrentOtherB ).setNextValue( Integer.valueOf( 0 ) );
+
+		this.channel(  meterVoltageOtherA ).setNextValue( Integer.valueOf( 0 ) );
+		this.channel(  meterVoltageOtherB ).setNextValue( Integer.valueOf( 0 ) );
+
 		/* Channels to be provided:
 
 		 * */
 
+	}
+
+	@Override
+	public void handleEvent(Event event) {
+		// TODO Auto-generated method stub
+		
 	}
 
 	/**
@@ -214,6 +273,12 @@ public class HycubePvInverterImpl extends AbstractOpenemsComponent implements Hy
 	public SinglePhase getPhase() {
 		// TODO Auto-generated method stub
 		return null;
+	}
+
+	@Override
+	public MeterType getMeterType() {
+		// TODO Auto-generated method stub
+		return HycubePvInverter.super.getMeterType();
 	}
 
 }

@@ -1,10 +1,9 @@
 package io.openems.edge.hycube.batteryinverter;
 
-import static io.openems.edge.bridge.modbus.api.ElementToChannelConverter.INVERT;
-import static io.openems.edge.bridge.modbus.api.ElementToChannelConverter.SCALE_FACTOR_1;
-import static io.openems.edge.bridge.modbus.api.ElementToChannelConverter.SCALE_FACTOR_2;
-import static io.openems.edge.bridge.modbus.api.ElementToChannelConverter.SCALE_FACTOR_MINUS_1;
-import static io.openems.edge.bridge.modbus.api.ElementToChannelConverter.SCALE_FACTOR_MINUS_1_AND_INVERT;
+import static io.openems.common.channel.AccessMode.READ_WRITE;
+import static io.openems.common.channel.Unit.AMPERE;
+import static io.openems.common.channel.Unit.VOLT;
+import static io.openems.common.types.OpenemsType.INTEGER;
 import static io.openems.edge.common.channel.ChannelUtils.setValue;
 import static io.openems.edge.common.event.EdgeEventConstants.TOPIC_CYCLE_AFTER_PROCESS_IMAGE;
 import static io.openems.edge.common.event.EdgeEventConstants.TOPIC_CYCLE_BEFORE_CONTROLLERS;
@@ -16,6 +15,7 @@ import static org.osgi.service.component.annotations.ReferencePolicy.STATIC;
 import static org.osgi.service.component.annotations.ReferencePolicyOption.GREEDY;
 
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
 import org.osgi.service.cm.ConfigurationAdmin;
@@ -24,8 +24,8 @@ import org.osgi.service.component.annotations.Activate;
 import org.osgi.service.component.annotations.Component;
 import org.osgi.service.component.annotations.Deactivate;
 import org.osgi.service.component.annotations.Reference;
-import org.osgi.service.component.annotations.ReferencePolicy;
 import org.osgi.service.event.Event;
+import org.osgi.service.event.EventHandler;
 import org.osgi.service.event.propertytypes.EventTopics;
 import org.osgi.service.metatype.annotations.Designate;
 import org.slf4j.Logger;
@@ -34,11 +34,13 @@ import org.slf4j.LoggerFactory;
 import io.openems.common.channel.AccessMode;
 import io.openems.common.exceptions.OpenemsError.OpenemsNamedException;
 import io.openems.common.exceptions.OpenemsException;
+import io.openems.common.types.MeterType;
 import io.openems.edge.battery.api.Battery;
-import io.openems.edge.battery.pylontech.powercubem2.PylontechPowercubeM2Battery;
+import io.openems.edge.battery.protection.BatteryProtection;
 import io.openems.edge.battery.pylontech.us2000C.PylontechUS2000CBattery;
 import io.openems.edge.batteryinverter.api.BatteryInverterConstraint;
 import io.openems.edge.batteryinverter.api.ManagedSymmetricBatteryInverter;
+import io.openems.edge.batteryinverter.api.OffGridBatteryInverter;
 import io.openems.edge.batteryinverter.api.SymmetricBatteryInverter;
 import io.openems.edge.bridge.modbus.api.AbstractOpenemsModbusComponent;
 import io.openems.edge.bridge.modbus.api.BridgeModbus;
@@ -52,28 +54,29 @@ import io.openems.edge.bridge.modbus.api.element.UnsignedWordElement;
 import io.openems.edge.bridge.modbus.api.task.FC3ReadRegistersTask;
 import io.openems.edge.bridge.modbus.api.task.FC6WriteRegisterTask;
 import io.openems.edge.common.channel.Channel;
+import io.openems.edge.common.channel.Doc;
+import io.openems.edge.common.channel.EnumReadChannel;
+import io.openems.edge.common.channel.IntegerReadChannel;
 import io.openems.edge.common.channel.IntegerWriteChannel;
+import io.openems.edge.common.channel.internal.AbstractReadChannel;
 import io.openems.edge.common.channel.value.Value;
 import io.openems.edge.common.component.ComponentManager;
 import io.openems.edge.common.component.OpenemsComponent;
 import io.openems.edge.common.modbusslave.ModbusSlave;
 import io.openems.edge.common.modbusslave.ModbusSlaveNatureTable;
 import io.openems.edge.common.modbusslave.ModbusSlaveTable;
-import io.openems.edge.common.modbusslave.ModbusType;
 import io.openems.edge.common.startstop.StartStop;
 import io.openems.edge.common.startstop.StartStoppable;
 import io.openems.edge.common.sum.GridMode;
 import io.openems.edge.common.taskmanager.Priority;
 import io.openems.edge.common.type.Phase.SingleOrAllPhase;
-import io.openems.edge.ess.api.SymmetricEss;
-import io.openems.edge.ess.power.api.Power;
 import io.openems.edge.ess.power.api.Pwr;
 import io.openems.edge.ess.power.api.Relationship;
 import io.openems.edge.hycube.batteryinverter.statemachine.Context;
 import io.openems.edge.hycube.batteryinverter.statemachine.StateMachine;
 import io.openems.edge.hycube.batteryinverter.statemachine.StateMachine.State;
-import io.openems.edge.hycube.enums.DeviceType;
 import io.openems.edge.hycube.ess.HycubeEss;
+import io.openems.edge.meter.api.ElectricityMeter;
 import io.openems.edge.timedata.api.Timedata;
 import io.openems.edge.timedata.api.TimedataProvider;
 import io.openems.edge.timedata.api.utils.CalculateEnergyFromPower;
@@ -104,7 +107,7 @@ import io.openems.edge.timedata.api.utils.CalculateEnergyFromPower;
 		TOPIC_CYCLE_AFTER_PROCESS_IMAGE //
 })
 public class HycubeBatteryInverterImpl extends AbstractOpenemsModbusComponent implements HycubeBatteryInverter,
-		ManagedSymmetricBatteryInverter, SymmetricBatteryInverter, OpenemsComponent, StartStoppable, ModbusSlave, TimedataProvider {
+		ManagedSymmetricBatteryInverter, SymmetricBatteryInverter, EventHandler, OpenemsComponent, StartStoppable, ModbusSlave, TimedataProvider {
 
 	private final Logger log = LoggerFactory.getLogger(HycubeBatteryInverterImpl.class);
 
@@ -129,6 +132,7 @@ public class HycubeBatteryInverterImpl extends AbstractOpenemsModbusComponent im
 	public HycubeBatteryInverterImpl() throws OpenemsNamedException {
 		super(//
 				OpenemsComponent.ChannelId.values(), //
+				OffGridBatteryInverter.ChannelId.values(), //
 				SymmetricBatteryInverter.ChannelId.values(), //
 				ManagedSymmetricBatteryInverter.ChannelId.values(), //
 				ModbusComponent.ChannelId.values(), //
@@ -192,28 +196,73 @@ public class HycubeBatteryInverterImpl extends AbstractOpenemsModbusComponent im
 			return;
 		}
 		
+		//pyBattery.getCapacity()
+		
 		this._setMaxApparentPower(4600);
 		this._setGridMode(GridMode.ON_GRID);
 		
 		addCopyListener( channel( HycubeBatteryInverter.ChannelId.INVERTER_TEMPERATURE ), 
 				SymmetricBatteryInverter.ChannelId.TEMPERATURE_CABINET, ElementToChannelConverter.SCALE_FACTOR_1 );
 		
-		/* Channels to be provided:
-		** ACTIVE_CHARGE_ENERGY
-		** ACTIVE_DISCHARGE_ENERGY
-ACTIVE_POWER
-APPARENT_POWER
-DC_MAX_VOLTAGE
-DC_MIN_VOLTAGE
-GRID_MODE
-MAX_APPARENT_POWER
-REACTIVE_POWER
-		 **TEMPERATURE_CABINET
+		addCopyListener( battery.getCapacityChannel(), HycubeBatteryInverter.ChannelId.CAPACITY, ElementToChannelConverter.DIRECT_1_TO_1 );
 
-CAPACITY
+		IntegerReadChannel chan = this.channel( HycubeBatteryInverter.ChannelId.SYSTEM_MAX_CHARGE_CURRENT );
+		
+		chan.setNextValue( 70 );
+		
+		chan = this.channel( HycubeBatteryInverter.ChannelId.SYSTEM_MAX_DISCHARGE_CURRENT );
+		
+		chan.setNextValue( 100 );
 
-		 * */
+		chan = this.channel( HycubeBatteryInverter.ChannelId.MAX_CHARGE_VOLTAGE );
+		
+		chan.setNextValue( 58 );
+		
+		chan = this.channel( HycubeBatteryInverter.ChannelId.MIN_DISCHARGE_VOLTAGE );
+		
+		chan.setNextValue( 40 );
 
+		chan = this.channel( SymmetricBatteryInverter.ChannelId.DC_MAX_VOLTAGE );
+		
+		chan.setNextValue( 58 );
+		
+		chan = this.channel( SymmetricBatteryInverter.ChannelId.DC_MIN_VOLTAGE );
+		
+		chan.setNextValue( 40 );
+
+		chan = this.channel( SymmetricBatteryInverter.ChannelId.MAX_APPARENT_POWER );
+		
+		chan.setNextValue( 4600 );
+		
+		chan = this.channel( HycubeBatteryInverter.ChannelId.GRID_L1_VOLTAGE );
+		
+		EnumReadChannel gridModeChannel = this.channel( SymmetricBatteryInverter.ChannelId.GRID_MODE );
+		
+		chan.onChange( (oldValue, newValue) -> 
+		{
+			float gridVoltage = newValue.get() * 0.1f;
+			
+			GridMode mode = ( gridVoltage > 200.0f ) ? GridMode.ON_GRID : GridMode.OFF_GRID;
+			
+			gridModeChannel._setNextValue( mode.ordinal() );
+		} );
+		
+		IntegerReadChannel solar1 = this.channel( HycubeBatteryInverter.ChannelId.SOLAR1_POWER );
+
+		IntegerReadChannel solar2 = this.channel( HycubeBatteryInverter.ChannelId.SOLAR2_POWER );
+
+		IntegerReadChannel solarSum = this.channel( HycubeBatteryInverter.ChannelId.SOLAR_SUM_POWER );
+
+		solar2.onChange( (oldValue, solar2Power) -> 
+		{
+			int sum = solar1.getNextValue().get() + solar2Power.get();
+			
+			solarSum.setNextValue( sum );
+		} );
+		
+		
+		addCopyListener( battery.getSocChannel(), HycubeBatteryInverter.ChannelId.SOC, ElementToChannelConverter.DIRECT_1_TO_1 );
+		
 	}
 
 	/**
@@ -538,14 +587,14 @@ TEMPERATURE_CABINET
 						this.m(HycubeBatteryInverter.ChannelId.BATTERY_CURRENT, new SignedWordElement(0x401A)),
 						this.m(HycubeBatteryInverter.ChannelId.BATTERY_VOLTAGE, new UnsignedWordElement(0x401B)),
 						new DummyRegisterElement(0x401c, 0x401e),
-						this.m(HycubeBatteryInverter.ChannelId.BATTERY_POWER, new SignedWordElement(0x401f)),
+						this.m(SymmetricBatteryInverter.ChannelId.ACTIVE_POWER, new SignedWordElement(0x401f)),
 						this.m(HycubeBatteryInverter.ChannelId.INVERTER_TEMPERATURE, new SignedWordElement(0x4020)),
 						new DummyRegisterElement(0x4021, 0x4023),
 						this.m(HycubeBatteryInverter.ChannelId.DSP_VERSION, new UnsignedDoublewordElement(0x4024)),
 						new DummyRegisterElement(0x4026, 0x402C),
 						this.m(HycubeBatteryInverter.ChannelId.LOAD_OUTPUT_VOLTAGE_L1, new SignedWordElement(0x402D)),
 						new DummyRegisterElement(0x402E, 0x402F),
-						this.m(HycubeBatteryInverter.ChannelId.LOAD_OUTPUT_FREQUENCY, new UnsignedWordElement(0x4030)),
+						this.m(OffGridBatteryInverter.ChannelId.OFF_GRID_FREQUENCY, new UnsignedWordElement(0x4030), ElementToChannelConverter.SCALE_FACTOR_MINUS_3 ),
 						this.m(HycubeBatteryInverter.ChannelId.LOAD_OUTPUT_CURRENT_L1, new UnsignedWordElement(0x4031)),
 						new DummyRegisterElement(0x4032, 0x4033),
 						this.m(HycubeBatteryInverter.ChannelId.LOAD_OUTPUT_POWER_FACTOR, new SignedWordElement(0x4034)),

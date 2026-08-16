@@ -29,15 +29,6 @@ public @interface Config {
 	@AttributeDefinition(name = "Read-Only mode", description = "Enables Read-Only mode")
 	boolean readOnlyMode() default false;
 
-	@AttributeDefinition(name = "Max Charge Power", description = "Maximum charge power in W")
-	int maxChargePower() default 3000;
-
-	@AttributeDefinition(name = "Max Discharge Power", description = "Maximum discharge power in W")
-	int maxDischargePower() default 4600;
-
-	@AttributeDefinition(name = "Max Apparent Power", description = "Maximum apparent power in VA")
-	int maxApparentPower() default 4600;
-
 	@AttributeDefinition(name = "Hycube BatteryInverter ID", description = "BatteryInverter-ID which the ess is connected to")
 	String batteryInverter_id() default "batteryInverter0";
 
