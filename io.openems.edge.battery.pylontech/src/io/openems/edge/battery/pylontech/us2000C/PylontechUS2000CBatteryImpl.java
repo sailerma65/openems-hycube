@@ -93,6 +93,8 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 	// Abfrage 68: CMD_GET_ALARM_INFO ca. alle 20s
 	// Abfrage 146: CMD_GET_MANAGEMENT_INFO ca. alle 20s
 	
+	private static final int BATTERY_VOLTAGE = 48;
+
 	public PylontechUS2000CBatteryImpl() {
 		super(//
 				OpenemsComponent.ChannelId.values(), //
@@ -615,7 +617,7 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 			
 			channel( Battery.ChannelId.CURRENT ).setNextValue(current);
 
-			channel( Battery.ChannelId.CAPACITY ).setNextValue(capacity_Ah * 48); 
+			channel( Battery.ChannelId.CAPACITY ).setNextValue(capacity_Ah * BATTERY_VOLTAGE); 
 
 			channel( Battery.ChannelId.MIN_CELL_TEMPERATURE ).setNextValue(minCellTemperature);
 
