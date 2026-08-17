@@ -1,7 +1,7 @@
-package io.openems.edge.hycube.batteryinverter.statemachine;
+package io.openems.edge.hycube.ess.statemachine;
 
 import io.openems.edge.common.statemachine.StateHandler;
-import io.openems.edge.hycube.batteryinverter.statemachine.StateMachine.State;
+import io.openems.edge.hycube.ess.statemachine.StateMachine.State;
 
 public class UndefinedHandler extends StateHandler<State, Context> {
 

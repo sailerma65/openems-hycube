@@ -23,14 +23,29 @@ public @interface Config {
 	@AttributeDefinition(name = "Connected Phase", description = "to which phase is the ESS connected?")
 	SingleOrAllPhase phase() default SingleOrAllPhase.L1;
 
+	@AttributeDefinition(name = "Modbus-ID", description = "ID of Modbus bridge.")
+	String modbus_id() default "modbus0";
+
+	@AttributeDefinition(name = "Modbus Unit-ID", description = "The Unit-ID of the Modbus device.")
+	int modbusUnitId() default 227;
+
 	@AttributeDefinition(name = "Debug", description = "Enable debug mode?")
 	boolean debugMode() default false;
+
+	@AttributeDefinition(name = "Max Charge Power", description = "Maximum charge power in W")
+	int maxChargePower() default 3000;
+
+	@AttributeDefinition(name = "Max Discharge Power", description = "Maximum discharge power in W")
+	int maxDischargePower() default 4600;
+
+	@AttributeDefinition(name = "Start/stop behaviour?", description = "Should this Component be forced to start or stop?")
+	StartStopConfig startStop() default StartStopConfig.AUTO;
 
 	@AttributeDefinition(name = "Read-Only mode", description = "Enables Read-Only mode")
 	boolean readOnlyMode() default false;
 
-	@AttributeDefinition(name = "Hycube BatteryInverter ID", description = "BatteryInverter-ID which the ess is connected to")
-	String batteryInverter_id() default "batteryInverter0";
+	@AttributeDefinition(name = "Hycube Battery ID", description = "Battery-ID which the batteryinverter is connected to")
+	String battery_id() default "battery0";
 
 	String webconsole_configurationFactory_nameHint() default "Hycube ESS [{id}]";
 

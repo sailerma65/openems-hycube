@@ -1,18 +1,18 @@
-package io.openems.edge.hycube.batteryinverter.statemachine;
+package io.openems.edge.hycube.ess.statemachine;
 
 import io.openems.edge.batteryinverter.api.OffGridBatteryInverter.TargetGridMode;
 import io.openems.edge.common.statemachine.AbstractContext;
-import io.openems.edge.hycube.batteryinverter.Config;
-import io.openems.edge.hycube.batteryinverter.HycubeBatteryInverterImpl;
+import io.openems.edge.hycube.ess.Config;
+import io.openems.edge.hycube.ess.HycubeEssImpl;
 
-public class Context extends AbstractContext<HycubeBatteryInverterImpl> {
+public class Context extends AbstractContext<HycubeEssImpl> {
 
 	protected final Config config;
 	protected final TargetGridMode targetGridMode;
 	protected final int setActivePower;
 	protected final int setReactivePower;
 
-	public Context(HycubeBatteryInverterImpl parent, Config config, TargetGridMode targetGridMode, int setActivePower,
+	public Context(HycubeEssImpl parent, Config config, TargetGridMode targetGridMode, int setActivePower,
 			int setReactivePower) {
 		super(parent);
 		this.config = config;

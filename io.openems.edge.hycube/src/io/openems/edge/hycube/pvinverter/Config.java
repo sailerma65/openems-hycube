@@ -3,10 +3,7 @@ package io.openems.edge.hycube.pvinverter;
 import org.osgi.service.metatype.annotations.AttributeDefinition;
 import org.osgi.service.metatype.annotations.ObjectClassDefinition;
 
-import io.openems.common.types.MeterType;
-import io.openems.edge.common.startstop.StartStopConfig;
 import io.openems.edge.common.type.Phase.SingleOrAllPhase;
-import io.openems.edge.hycube.enums.DeviceType;
 
 @ObjectClassDefinition(//
 		name = "Hycube PV-Inverter RO", //
@@ -27,8 +24,8 @@ public @interface Config {
 
 	@AttributeDefinition(name = "Debug", description = "Enable debug mode?")
 	boolean debugMode() default false;
-	@AttributeDefinition(name = "Hycube Battery Inverter ID", description = "Battery-ID which the batteryinverter is connected to")
-	String batteryInverter_id() default "batteryInverter0";
+	@AttributeDefinition(name = "Hycube ESS ID", description = "ESS-ID which the PV inverter is connected to")
+	String ess_id() default "ess0";
 
 	String webconsole_configurationFactory_nameHint() default "HYCUBE Hybrid Inverter (ESS){id}]";
 }

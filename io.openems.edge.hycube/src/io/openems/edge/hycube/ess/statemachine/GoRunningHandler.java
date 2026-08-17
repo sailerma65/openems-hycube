@@ -1,10 +1,10 @@
-package io.openems.edge.hycube.batteryinverter.statemachine;
+package io.openems.edge.hycube.ess.statemachine;
 
 import io.openems.common.exceptions.OpenemsError.OpenemsNamedException;
 import io.openems.edge.batteryinverter.api.OffGridBatteryInverter.TargetGridMode;
 import io.openems.edge.common.statemachine.StateHandler;
 import io.openems.edge.common.sum.GridMode;
-import io.openems.edge.hycube.batteryinverter.statemachine.StateMachine.State;
+import io.openems.edge.hycube.ess.statemachine.StateMachine.State;
 
 /**
  * Handles the GO_RUNNING state - transition from stopped/undefined to running.

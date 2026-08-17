@@ -1,24 +1,13 @@
 package io.openems.edge.battery.pylontech.us2000C;
 
-import static io.openems.edge.bridge.modbus.api.ElementToChannelConverter.DIRECT_1_TO_1;
-import static io.openems.edge.bridge.modbus.api.ElementToChannelConverter.KEEP_NEGATIVE_AND_INVERT;
-import static io.openems.edge.bridge.modbus.api.ElementToChannelConverter.SCALE_FACTOR_MINUS_1;
-import static io.openems.edge.bridge.modbus.api.ElementToChannelConverter.SCALE_FACTOR_MINUS_2;
-import static io.openems.edge.bridge.modbus.api.ElementToChannelConverter.chain;
 import static io.openems.edge.common.event.EdgeEventConstants.TOPIC_CYCLE_AFTER_PROCESS_IMAGE;
 import static io.openems.edge.common.event.EdgeEventConstants.TOPIC_CYCLE_BEFORE_PROCESS_IMAGE;
 import static org.osgi.service.component.annotations.ConfigurationPolicy.REQUIRE;
-import static org.osgi.service.component.annotations.ReferenceCardinality.MANDATORY;
-import static org.osgi.service.component.annotations.ReferencePolicy.STATIC;
-import static org.osgi.service.component.annotations.ReferencePolicyOption.GREEDY;
 
 import java.io.IOException;
-import java.util.Hashtable;
 import java.util.LinkedHashMap;
-import java.util.LinkedList;
 import java.util.Map.Entry;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Consumer;
 
 import org.osgi.service.cm.ConfigurationAdmin;
 import org.osgi.service.component.ComponentContext;
@@ -33,11 +22,8 @@ import org.osgi.service.metatype.annotations.Designate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import io.openems.common.channel.AccessMode;
-import io.openems.common.channel.Level;
 import io.openems.common.exceptions.OpenemsError.OpenemsNamedException;
 import io.openems.common.exceptions.OpenemsException;
-import io.openems.common.types.OpenemsType;
 import io.openems.common.worker.AbstractWorker;
 import io.openems.edge.battery.api.Battery;
 import io.openems.edge.battery.protection.BatteryProtection;
@@ -45,41 +31,29 @@ import io.openems.edge.battery.pylontech.us2000C.com.Pylontech;
 import io.openems.edge.battery.pylontech.us2000C.com.Pylontech.CMD_DESCRIPTORS;
 import io.openems.edge.battery.pylontech.us2000C.com.Pylontech.Frame;
 import io.openems.edge.battery.pylontech.us2000C.com.Pylontech.FrameTimeoutException;
-import io.openems.edge.battery.pylontech.us2000C.com.Pylontech.ReadCursor;
 import io.openems.edge.battery.pylontech.us2000C.com.Pylontech.UnexpectedStartOfFrame;
 import io.openems.edge.battery.pylontech.us2000C.statemachine.Context;
 import io.openems.edge.battery.pylontech.us2000C.statemachine.StateMachine;
 import io.openems.edge.battery.pylontech.us2000C.statemachine.StateMachine.State;
-import io.openems.edge.bridge.modbus.api.AbstractOpenemsModbusComponent;
-import io.openems.edge.bridge.modbus.api.BridgeModbus;
-import io.openems.edge.bridge.modbus.api.ElementToChannelConverter;
-import io.openems.edge.bridge.modbus.api.ModbusComponent;
-import io.openems.edge.bridge.modbus.api.ModbusProtocol;
-import io.openems.edge.bridge.modbus.api.element.BitsWordElement;
-import io.openems.edge.bridge.modbus.api.element.SignedDoublewordElement;
-import io.openems.edge.bridge.modbus.api.element.SignedWordElement;
-import io.openems.edge.bridge.modbus.api.element.UnsignedDoublewordElement;
-import io.openems.edge.bridge.modbus.api.element.UnsignedWordElement;
-import io.openems.edge.bridge.modbus.api.task.FC3ReadRegistersTask;
-import io.openems.edge.bridge.modbus.api.task.FC6WriteRegisterTask;
 import io.openems.edge.common.channel.Channel;
-import io.openems.edge.common.channel.ChannelId.ChannelIdImpl;
-import io.openems.edge.common.channel.Doc;
-import io.openems.edge.common.channel.IntegerWriteChannel;
 import io.openems.edge.common.component.AbstractOpenemsComponent;
 import io.openems.edge.common.component.ComponentManager;
 import io.openems.edge.common.component.OpenemsComponent;
-import io.openems.edge.common.modbusslave.ModbusSlave;
-import io.openems.edge.common.modbusslave.ModbusSlaveTable;
 import io.openems.edge.common.startstop.StartStop;
+import io.openems.edge.common.startstop.StartStopConfig;
 import io.openems.edge.common.startstop.StartStoppable;
-import io.openems.edge.common.taskmanager.Priority;
 
 @Designate(ocd = Config.class, factory = true)
 @Component(//
 		name = "Battery.PylontechUS2000C", //
 		immediate = true, //
-		configurationPolicy = REQUIRE)
+		configurationPolicy = REQUIRE,
+		service = { 
+				Battery.class,          // <-- ZWINGEND ERFORDERLICH für Core.Sum
+				OpenemsComponent.class,       // Basisschnittstelle
+				EventHandler.class
+		})
+
 @EventTopics({ //
 		TOPIC_CYCLE_BEFORE_PROCESS_IMAGE, //
 		TOPIC_CYCLE_AFTER_PROCESS_IMAGE })
@@ -396,7 +370,6 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 		m_numberOfDevices = this.config.devicesInParallel();
 		
 		numberOfDevicesChannel.setNextValue( m_numberOfDevices );
-
 	}
 
 	

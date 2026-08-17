@@ -1,17 +1,18 @@
 package io.openems.edge.hycube.ess;
 
+import static io.openems.common.channel.PersistencePriority.HIGH;
+import static io.openems.common.channel.Unit.WATT;
+import static io.openems.common.types.OpenemsType.INTEGER;
 import static io.openems.edge.common.channel.ChannelUtils.setValue;
 import static io.openems.edge.common.event.EdgeEventConstants.TOPIC_CYCLE_BEFORE_CONTROLLERS;
 import static io.openems.edge.common.event.EdgeEventConstants.TOPIC_CYCLE_BEFORE_PROCESS_IMAGE;
-import static io.openems.edge.common.type.Phase.SingleOrAllPhase.ALL;
-import static io.openems.edge.ess.power.api.Pwr.ACTIVE;
-import static io.openems.edge.ess.power.api.Pwr.REACTIVE;
-import static io.openems.edge.ess.power.api.Relationship.EQUALS;
 import static org.osgi.service.component.annotations.ConfigurationPolicy.REQUIRE;
+import static org.osgi.service.component.annotations.ReferenceCardinality.MANDATORY;
 import static org.osgi.service.component.annotations.ReferenceCardinality.OPTIONAL;
 import static org.osgi.service.component.annotations.ReferencePolicy.STATIC;
 import static org.osgi.service.component.annotations.ReferencePolicyOption.GREEDY;
 
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 import org.osgi.service.cm.ConfigurationAdmin;
@@ -27,16 +28,38 @@ import org.osgi.service.metatype.annotations.Designate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import io.openems.common.channel.AccessMode;
 import io.openems.common.exceptions.OpenemsError.OpenemsNamedException;
 import io.openems.common.exceptions.OpenemsException;
-import io.openems.edge.batteryinverter.api.ManagedSymmetricBatteryInverter;
+import io.openems.edge.battery.api.Battery;
+import io.openems.edge.batteryinverter.api.OffGridBatteryInverter.TargetGridMode;
+import io.openems.edge.bridge.modbus.api.AbstractOpenemsModbusComponent;
+import io.openems.edge.bridge.modbus.api.BridgeModbus;
 import io.openems.edge.bridge.modbus.api.ElementToChannelConverter;
+import io.openems.edge.bridge.modbus.api.ModbusComponent;
+import io.openems.edge.bridge.modbus.api.ModbusProtocol;
+import io.openems.edge.bridge.modbus.api.element.DummyRegisterElement;
+import io.openems.edge.bridge.modbus.api.element.SignedWordElement;
+import io.openems.edge.bridge.modbus.api.element.UnsignedDoublewordElement;
+import io.openems.edge.bridge.modbus.api.element.UnsignedWordElement;
+import io.openems.edge.bridge.modbus.api.task.FC3ReadRegistersTask;
+import io.openems.edge.bridge.modbus.api.task.FC6WriteRegisterTask;
 import io.openems.edge.common.channel.Channel;
+import io.openems.edge.common.channel.Doc;
+import io.openems.edge.common.channel.EnumReadChannel;
+import io.openems.edge.common.channel.IntegerReadChannel;
+import io.openems.edge.common.channel.IntegerWriteChannel;
 import io.openems.edge.common.channel.value.Value;
-import io.openems.edge.common.component.AbstractOpenemsComponent;
 import io.openems.edge.common.component.ComponentManager;
 import io.openems.edge.common.component.OpenemsComponent;
+import io.openems.edge.common.modbusslave.ModbusSlave;
+import io.openems.edge.common.modbusslave.ModbusSlaveNatureTable;
+import io.openems.edge.common.modbusslave.ModbusSlaveTable;
+import io.openems.edge.common.startstop.StartStop;
+import io.openems.edge.common.startstop.StartStopConfig;
+import io.openems.edge.common.startstop.StartStoppable;
 import io.openems.edge.common.sum.GridMode;
+import io.openems.edge.common.taskmanager.Priority;
 import io.openems.edge.common.type.Phase.SinglePhase;
 import io.openems.edge.ess.api.AsymmetricEss;
 import io.openems.edge.ess.api.ManagedAsymmetricEss;
@@ -44,11 +67,14 @@ import io.openems.edge.ess.api.ManagedSinglePhaseEss;
 import io.openems.edge.ess.api.ManagedSymmetricEss;
 import io.openems.edge.ess.api.SinglePhaseEss;
 import io.openems.edge.ess.api.SymmetricEss;
-import io.openems.edge.ess.power.api.Constraint;
 import io.openems.edge.ess.power.api.Power;
-import io.openems.edge.hycube.batteryinverter.HycubeBatteryInverter;
-import io.openems.edge.hycube.batteryinverter.HycubeBatteryInverterImpl;
 import io.openems.edge.hycube.enums.EnableDisable;
+import io.openems.edge.hycube.ess.statemachine.Context;
+import io.openems.edge.hycube.ess.statemachine.StateMachine;
+import io.openems.edge.hycube.ess.statemachine.StateMachine.State;
+import io.openems.edge.timedata.api.Timedata;
+import io.openems.edge.timedata.api.TimedataProvider;
+import io.openems.edge.timedata.api.utils.CalculateEnergyFromPower;
 
 /**
  * Implementation of the Hycube ESS component.
@@ -63,81 +89,32 @@ import io.openems.edge.hycube.enums.EnableDisable;
 		service = { 
 			            SymmetricEss.class,          // <-- ZWINGEND ERFORDERLICH für Core.Sum
 			            ManagedSymmetricEss.class,   // (Falls steuerbar)
-			            OpenemsComponent.class       // Basisschnittstelle
+			            OpenemsComponent.class,       // Basisschnittstelle
+			            EventHandler.class
 		}
 )
 @EventTopics({ //
 		TOPIC_CYCLE_BEFORE_PROCESS_IMAGE, //
 		TOPIC_CYCLE_BEFORE_CONTROLLERS //
 })
-public class HycubeEssImpl extends AbstractOpenemsComponent
+public class HycubeEssImpl extends AbstractOpenemsModbusComponent
 		implements HycubeEss, ManagedSinglePhaseEss,  EventHandler, SinglePhaseEss, ManagedSymmetricEss, AsymmetricEss,
-		ManagedAsymmetricEss, OpenemsComponent {
+		ManagedAsymmetricEss, OpenemsComponent, StartStoppable, ModbusSlave, TimedataProvider {
 
-	/*
-	 ** ManagedSymmetricEss **
-ALLOWED_CHARGE_POWER
-ALLOWED_DISCHARGE_POWER
-APPLY_POWER_FAILED
-DEBUG_SET_ACTIVE_POWER
-	 *DEBUG_SET_REACTIVE_POWER
-SET_ACTIVE_POWER_EQUALS
-	 *SET_ACTIVE_POWER_GREATER_OR_EQUALS
-	 *SET_ACTIVE_POWER_LESS_OR_EQUALS
-	 *SET_REACTIVE_POWER_EQUALS
-	 *SET_REACTIVE_POWER_GREATER_OR_EQUALS
-	 *SET_REACTIVE_POWER_LESS_OR_EQUALS
-
-	 ** AsymmetricEss **
-ACTIVE_POWER_L1
-	 *ACTIVE_POWER_L2
-	 *ACTIVE_POWER_L3
-	 *REACTIVE_POWER_L1
-	 *REACTIVE_POWER_L2
-	 *REACTIVE_POWER_L3
-
-	 ** ManagedAsymmetricEss **
-DEBUG_SET_ACTIVE_POWER_L1
-	 *DEBUG_SET_ACTIVE_POWER_L2
-	 *DEBUG_SET_ACTIVE_POWER_L3
-	 *DEBUG_SET_REACTIVE_POWER_L1
-	 *DEBUG_SET_REACTIVE_POWER_L2
-	 *DEBUG_SET_REACTIVE_POWER_L3
-SET_ACTIVE_POWER_L1_EQUALS
-	 *SET_ACTIVE_POWER_L1_GREATER_OR_EQUALS
-	 *SET_ACTIVE_POWER_L1_LESS_OR_EQUALS
-	 *SET_ACTIVE_POWER_L2_EQUALS
-	 *SET_ACTIVE_POWER_L2_GREATER_OR_EQUALS
-	 *SET_ACTIVE_POWER_L2_LESS_OR_EQUALS
-	 *SET_ACTIVE_POWER_L3_EQUALS
-	 *SET_ACTIVE_POWER_L3_GREATER_OR_EQUALS
-	 *SET_ACTIVE_POWER_L3_LESS_OR_EQUALS
-	 *SET_REACTIVE_POWER_L1_EQUALS
-	 *SET_REACTIVE_POWER_L1_GREATER_OR_EQUALS
-	 *SET_REACTIVE_POWER_L1_LESS_OR_EQUALS
-	 *SET_REACTIVE_POWER_L2_EQUALS
-	 *SET_REACTIVE_POWER_L2_GREATER_OR_EQUALS
-	 *SET_REACTIVE_POWER_L2_LESS_OR_EQUALS
-	 *SET_REACTIVE_POWER_L3_EQUALS
-	 *SET_REACTIVE_POWER_L3_GREATER_OR_EQUALS
-	 *SET_REACTIVE_POWER_L3_LESS_OR_EQUALS
-	 */
-	
 	@Reference
 	private Power power;
 
+	private final StateMachine stateMachine = new StateMachine(State.UNDEFINED);
 
 	@Reference
 	private ConfigurationAdmin cm;
 
+	@Reference(policy = STATIC, policyOption = GREEDY, cardinality = MANDATORY)
+	private volatile Timedata timedata = null;
+
 	@Reference
 	protected ComponentManager componentManager;
 
-	@Reference(policy = STATIC, policyOption = GREEDY, cardinality = OPTIONAL)
-	private ManagedSymmetricBatteryInverter batteryInverter;
-	
-	private HycubeBatteryInverterImpl hyBatteryInverter;
-	
 	private final Logger log = LoggerFactory.getLogger(HycubeEssImpl.class);
 
 	private Config config;
@@ -145,32 +122,65 @@ SET_ACTIVE_POWER_L1_EQUALS
 
 	private boolean operationalValuesOk = false;
 
-	private Integer maxChargePower = null;
-	private Integer maxDischargePower = null;
+	public static final int BATTERY_VOLTAGE = 48; // for capacity calculation we cannot use current voltage
 
 	public HycubeEssImpl() {
 		super(//
 				OpenemsComponent.ChannelId.values(), //
+				ModbusComponent.ChannelId.values(), //
 				SinglePhaseEss.ChannelId.values(), //
 				ManagedSinglePhaseEss.ChannelId.values(), //
 				SymmetricEss.ChannelId.values(), //
 				ManagedSymmetricEss.ChannelId.values(), //
 				AsymmetricEss.ChannelId.values(), //
 				ManagedAsymmetricEss.ChannelId.values(), //
+				StartStoppable.ChannelId.values(), //
 				HycubeEss.ChannelId.values());
 	}
+
+	@Override
+	@Reference(policy = STATIC, policyOption = GREEDY, cardinality = MANDATORY)
+	protected void setModbus(BridgeModbus modbus) {
+		super.setModbus(modbus);
+	}
+
+	@Reference(policy = STATIC, policyOption = GREEDY, cardinality = OPTIONAL)
+	private Battery battery;
+	
+	private Integer batteryInverterMaxChargePower;
+	private Integer batteryInverterMaxDischargePower;
+	private Integer batteryMaxChargePower;
+	private Integer batteryMaxDischargePower;
+	private Integer maxChargePowerLimit;
+	private Integer maxDischargePowerLimit;
+
+	private final CalculateEnergyFromPower calculateDischargeEnergy = new CalculateEnergyFromPower(this,
+			SymmetricEss.ChannelId.ACTIVE_DISCHARGE_ENERGY );
+
+	private final CalculateEnergyFromPower calculateChargeEnergy = new CalculateEnergyFromPower(this,
+			SymmetricEss.ChannelId.ACTIVE_CHARGE_ENERGY);
+
+
 
 	@Activate
 	private void activate(ComponentContext context, Config config) throws OpenemsException {
 		this.config = config;
 
-		super.activate(context, config.id(), config.alias(), config.enabled() );
-
-		if( OpenemsComponent.updateReferenceFilter(this.cm, this.servicePid(), "BatteryInverter", config.batteryInverter_id()) )
-		{
-			this.logError(this.log, "ESS->updateReferenceFilter returned true!");
+		if (super.activate(context, config.id(), config.alias(), config.enabled(), config.modbusUnitId(), this.cm,
+				"Modbus", config.modbus_id())) {
 			return;
 		}
+
+		if( OpenemsComponent.updateReferenceFilter(this.cm, this.servicePid(), "Battery", config.battery_id()) )
+		{
+			return;
+		}
+		
+		if( battery == null )
+		{
+			return;
+		}
+		
 
 		this.singlePhase = switch (config.phase()) {
 		case L1 -> SinglePhase.L1;
@@ -187,98 +197,100 @@ SET_ACTIVE_POWER_L1_EQUALS
 		
 		setValue(this, SymmetricEss.ChannelId.GRID_MODE, GridMode.ON_GRID); // Has no Backup function
 
-		if ( this.batteryInverter instanceof HycubeBatteryInverterImpl hyInv ) {
-			hyBatteryInverter = hyInv;
-		}
-		else
-		{
-			this.logError(this.log, "ESS->BatteryInverter not yet activated ");
-			return;
-		}
+		this._setMaxApparentPower(4600);
+		this._setGridMode(GridMode.ON_GRID);
+		
+		addCopyListener( battery.getCapacityChannel(), SymmetricEss.ChannelId.CAPACITY, ElementToChannelConverter.DIRECT_1_TO_1 );
 
-		io.openems.edge.common.channel.ChannelId powerChannel = switch (config.phase()) {
-		case L1 -> AsymmetricEss.ChannelId.ACTIVE_POWER_L1;
-		case L2 -> AsymmetricEss.ChannelId.ACTIVE_POWER_L2;
-		case L3 -> AsymmetricEss.ChannelId.ACTIVE_POWER_L3;
+		IntegerReadChannel chan = this.channel( HycubeEss.ChannelId.SYSTEM_MAX_CHARGE_CURRENT );
+		
+		chan.setNextValue( 70 );
+		
+		chan = this.channel( HycubeEss.ChannelId.SYSTEM_MAX_DISCHARGE_CURRENT );
+		
+		chan.setNextValue( 100 );
+
+		chan = this.channel( HycubeEss.ChannelId.MAX_CHARGE_VOLTAGE );
+		
+		chan.setNextValue( 58 );
+		
+		chan = this.channel( HycubeEss.ChannelId.MIN_DISCHARGE_VOLTAGE );
+		
+		chan.setNextValue( 40 );
+
+		chan = this.channel( HycubeEss.ChannelId.DC_MAX_VOLTAGE );
+		
+		chan.setNextValue( 58 );
+		
+		chan = this.channel( HycubeEss.ChannelId.DC_MIN_VOLTAGE );
+		
+		chan.setNextValue( 40 );
+
+		chan = switch (config.phase()) {
+		case L1 -> this.channel( HycubeEss.ChannelId.GRID_L1_VOLTAGE );
+		case L2 -> this.channel( HycubeEss.ChannelId.GRID_L2_VOLTAGE );
+		case L3 -> this.channel( HycubeEss.ChannelId.GRID_L3_VOLTAGE );
 		default -> {
 			this.logError(this.log, "ESS->Hycube ESS supports only 1 phase ");
 			yield null;
 		}
 		};
 
-		addCopyListener( batteryInverter.getActivePowerChannel(), powerChannel, ElementToChannelConverter.DIRECT_1_TO_1 );
-		addCopyListener( batteryInverter.getActivePowerChannel(), SymmetricEss.ChannelId.ACTIVE_POWER, ElementToChannelConverter.DIRECT_1_TO_1 );
+		EnumReadChannel gridModeChannel = this.channel( SymmetricEss.ChannelId.GRID_MODE );
+		
+		chan.onChange( (oldValue, newValue) -> 
+		{
+			float gridVoltage = newValue.get() * 0.1f;
+			
+			GridMode mode = ( gridVoltage > 200.0f ) ? GridMode.ON_GRID : GridMode.OFF_GRID;
+			
+			gridModeChannel._setNextValue( mode.ordinal() );
+		} );
+		
+		IntegerReadChannel solar1 = this.channel( HycubeEss.ChannelId.SOLAR1_POWER );
 
-		this._setMaxApparentPower(batteryInverter.getMaxApparentPower().get());
+		IntegerReadChannel solar2 = this.channel( HycubeEss.ChannelId.SOLAR2_POWER );
 
-		addCopyListener( batteryInverter.getMaxApparentPowerChannel(), SymmetricEss.ChannelId.MAX_APPARENT_POWER, ElementToChannelConverter.DIRECT_1_TO_1 );
+		IntegerReadChannel solarSum = this.channel( HycubeEss.ChannelId.SOLAR_SUM_POWER );
 
-		addCopyListener( hyBatteryInverter.getSocChannel(), SymmetricEss.ChannelId.SOC, ElementToChannelConverter.DIRECT_1_TO_1 );
-
-		addCopyListener( hyBatteryInverter.getCapacityChannel(), SymmetricEss.ChannelId.CAPACITY, ElementToChannelConverter.DIRECT_1_TO_1 );
-
-
-	//	addCopyListener( batteryInverter.getVoltageChannel(), ManagedSymmetricEss.ChannelId., null);
-/* channels to be provided:
-				ALLOWED_CHARGE_POWER
-				ALLOWED_DISCHARGE_POWER
-				APPLY_POWER_FAILED
-				DEBUG_SET_ACTIVE_POWER
-				DEBUG_SET_REACTIVE_POWER
-				SET_ACTIVE_POWER_EQUALS
-				SET_ACTIVE_POWER_GREATER_OR_EQUALS
-				SET_ACTIVE_POWER_LESS_OR_EQUALS
-				SET_REACTIVE_POWER_EQUALS
-				SET_REACTIVE_POWER_GREATER_OR_EQUALS
-				SET_REACTIVE_POWER_LESS_OR_EQUALS
-
-ACTIVE_POWER_L1
-ACTIVE_POWER_L2
-ACTIVE_POWER_L3
-REACTIVE_POWER_L1
-REACTIVE_POWER_L2
-REACTIVE_POWER_L3
-
-
-DEBUG_SET_ACTIVE_POWER_L1
-DEBUG_SET_ACTIVE_POWER_L2
-DEBUG_SET_ACTIVE_POWER_L3
-DEBUG_SET_REACTIVE_POWER_L1
-DEBUG_SET_REACTIVE_POWER_L2
-DEBUG_SET_REACTIVE_POWER_L3
-SET_ACTIVE_POWER_L1_EQUALS
-SET_ACTIVE_POWER_L1_GREATER_OR_EQUALS
-SET_ACTIVE_POWER_L1_LESS_OR_EQUALS
-SET_ACTIVE_POWER_L2_EQUALS
-SET_ACTIVE_POWER_L2_GREATER_OR_EQUALS
-SET_ACTIVE_POWER_L2_LESS_OR_EQUALS
-SET_ACTIVE_POWER_L3_EQUALS
-SET_ACTIVE_POWER_L3_GREATER_OR_EQUALS
-SET_ACTIVE_POWER_L3_LESS_OR_EQUALS
-SET_REACTIVE_POWER_L1_EQUALS
-SET_REACTIVE_POWER_L1_GREATER_OR_EQUALS
-SET_REACTIVE_POWER_L1_LESS_OR_EQUALS
-SET_REACTIVE_POWER_L2_EQUALS
-SET_REACTIVE_POWER_L2_GREATER_OR_EQUALS
-SET_REACTIVE_POWER_L2_LESS_OR_EQUALS
-SET_REACTIVE_POWER_L3_EQUALS
-SET_REACTIVE_POWER_L3_GREATER_OR_EQUALS
-SET_REACTIVE_POWER_L3_LESS_OR_EQUALS
-
-STATE
-
-*/				
+		solar2.onChange( (oldValue, solar2Power) -> 
+		{
+			int sum = solar1.getNextValue().get() + solar2Power.get();
+			
+			solarSum.setNextValue( sum );
+		} );
+		
+		IntegerReadChannel recommendedVoltageChannel = battery.getVoltageChannel();
+		
+		IntegerReadChannel allowedChargePowerChannel = this.channel( ManagedSymmetricEss.ChannelId.ALLOWED_CHARGE_POWER );
+		
+		battery.getChargeMaxCurrentChannel().onSetNextValue( ( chargeCurrent ) -> 
+		{
+			int voltage = recommendedVoltageChannel.getNextValue().get();
+			
+			int power = voltage * chargeCurrent.get();
+			
+			allowedChargePowerChannel.setNextValue( power );
+		} );
+		
+		IntegerReadChannel allowedDishargePowerChannel = this.channel( ManagedSymmetricEss.ChannelId.ALLOWED_DISCHARGE_POWER );
+		
+		battery.getDischargeMaxCurrentChannel().onSetNextValue( ( chargeCurrent ) -> 
+		{
+			int voltage = recommendedVoltageChannel.getNextValue().get();
+			
+			int power = - voltage * chargeCurrent.get();
+			
+			allowedDishargePowerChannel.setNextValue( power );
+		} );
+		
+		addCopyListener( battery.getSocChannel(), SymmetricEss.ChannelId.SOC, ElementToChannelConverter.DIRECT_1_TO_1 );
 	}
 
 	@Override
 	@Deactivate
 	protected void deactivate() {
 		super.deactivate();
-	}
-
-	@Override
-	public int getPowerPrecision() {
-		return 100;
 	}
 
 	/**
@@ -307,6 +319,131 @@ STATE
 	}
 
 	/**
+	 * Calculates and sets the maximum charge and discharge power limits based on
+	 * hardware capabilities and the shared configuration limit.
+	 *
+	 * @return true if limits are successfully calculated, false if any required
+	 *         value is missing or invalid.
+	 */
+	private boolean calculateHardwareLimits() {
+
+		if (!this.getBatteryInverterLimits() || !this.getBatteryLimits()) {
+			return false;
+		}
+
+		// Initial check for null values or zero configuration which indicates missing
+		// setup or configuration
+		if (this.batteryInverterMaxChargePower == null || this.batteryMaxChargePower == null
+				|| this.batteryInverterMaxDischargePower == null || this.batteryMaxDischargePower == null
+				|| this.config.maxChargePower() == 0) {
+			return false;
+		}
+
+		// Calculate maximum charge power limit
+		this.maxChargePowerLimit = Math.min(Math.min(this.batteryInverterMaxChargePower, this.batteryMaxChargePower),
+				this.config.maxChargePower());
+
+		// Calculate maximum discharge power limit
+		this.maxDischargePowerLimit = Math.min(
+				Math.min(this.batteryInverterMaxDischargePower, this.batteryMaxDischargePower),
+				this.config.maxDischargePower());
+
+		return true;
+	}
+
+	/**
+	 * Gets BMS limits. Max charge current decreases according to SoC.
+	 *
+	 * @return true if limits were successfully retrieved, false if battery is not
+	 *         available or values are missing
+	 */
+	public boolean getBatteryLimits() {
+		if (this.battery == null) {
+			return false;
+		}
+
+		var chargeMaxCurrent = this.battery.getChargeMaxCurrent().get();
+		var dischargeMaxCurrent = this.battery.getDischargeMaxCurrent().get();
+		var voltage = this.battery.getVoltage().get();
+
+		if (chargeMaxCurrent == null || voltage == null) {
+			return false;
+		}
+		this.batteryMaxChargePower = chargeMaxCurrent * voltage;
+
+		if (dischargeMaxCurrent == null) {
+			return false;
+		}
+		this.batteryMaxDischargePower = dischargeMaxCurrent * voltage;
+
+		return true;
+	}
+
+	/**
+	 * Gets BatteryInverter limits from Modbus registers. Keep in mind that these
+	 * may differ from battery limits.
+	 *
+	 * @return true if limits were successfully retrieved, false if values are
+	 *         missing
+	 */
+	public boolean getBatteryInverterLimits() {
+		var maxChargeVoltage = this.getMaxChargeVoltage().get();
+		var systemMaxChargeCurrent = this.getSystemMaxChargeCurrent().get();
+		var systemMaxDischargeCurrent = this.getSystemMaxDischargeCurrent().get();
+		
+		if (maxChargeVoltage == null || systemMaxChargeCurrent == null || systemMaxDischargeCurrent == null ) {
+			return false;
+		}
+
+		this.batteryInverterMaxChargePower = Math.round(maxChargeVoltage * systemMaxChargeCurrent);
+		this.batteryInverterMaxDischargePower = Math.round(maxChargeVoltage * systemMaxDischargeCurrent);
+
+		var maxApparentPower = this.getMaxApparentPower().get();
+		if (maxApparentPower == null || maxApparentPower == 0) {
+			this.logError(this.log, "Device Type of battery inverter not configured!");
+			return false;
+		}
+		this._setMaxApparentPower(maxApparentPower);
+
+		return true;
+	}
+
+	/**
+	 * Runs the battery inverter state machine and applies power setpoints.
+	 *
+	 * <p>
+	 * Note: Power setpoints are controlled by the ESS component via
+	 * {@link HycubeEss#applyPower}.
+	 *
+	 * @param battery          the battery component
+	 * @param setActivePower   the active power setpoint in W (negative = charge)
+	 * @param setReactivePower the reactive power setpoint in var
+	 * @throws OpenemsNamedException on error
+	 */
+	private void setPowerValues(Battery _battery_, int setActivePower, int setReactivePower) throws OpenemsNamedException {
+		if (this.config == null) {
+			return;
+		}
+		
+		this.logDebug(this.log, "setActivePower " + setActivePower + " / setReactivePower " + setReactivePower);
+
+		// Update state machine channel
+		this.channel(HycubeEss.ChannelId.STATE_MACHINE).setNextValue(this.stateMachine.getCurrentState());
+
+		// Run state machine
+		var context = new Context(this, this.config, this.targetGridMode.get(), setActivePower, setReactivePower);
+		try {
+			this.stateMachine.run(context);
+			setValue(this, HycubeEss.ChannelId.RUN_FAILED, false);
+
+		} catch (OpenemsNamedException e) {
+			setValue(this, HycubeEss.ChannelId.RUN_FAILED, true);
+			this.logError(this.log, "StateMachine failed: " + e.getMessage());
+			this.stateMachine.forceNextState(State.ERROR);
+		}
+	}
+
+	/**
 	 * Updates the operational values from battery inverter.
 	 *
 	 * <p>
@@ -314,13 +451,7 @@ STATE
 	 * allowed charge/discharge power limits accordingly.
 	 */
 	private void updateOperationalValues() {
-		if (this.hyBatteryInverter == null) {
-			this.log.warn("ESS not ready. Battery not available");
-			this.operationalValuesOk = false;
-			return;
-		}
-
-		if (!Boolean.TRUE.equals(hyBatteryInverter.calculateHardwareLimits())) {
+		if (!Boolean.TRUE.equals(calculateHardwareLimits())) {
 			this.log.warn("BatteryInverter hardware limits not available");
 			this.operationalValuesOk = false;
 			return;
@@ -333,9 +464,7 @@ STATE
 			return;
 		}
 
-		Integer maxChargePower = hyBatteryInverter.getMaxChargePower(); // [W], positiv
-		Integer maxDischargePower = hyBatteryInverter.getMaxDischargePower(); // [W], positiv
-		if (maxChargePower == null || maxDischargePower == null || maxChargePower < 0 || maxDischargePower < 0) {
+		if (maxChargePowerLimit == null || maxDischargePowerLimit == null || maxChargePowerLimit < 0 || maxDischargePowerLimit < 0) {
 			this.log.warn(
 					"BatteryInverter Allowed Charge/Discharge values not available -> System is not ready. Values will not be applied");
 			this.operationalValuesOk = false;
@@ -350,9 +479,9 @@ STATE
 			return;
 		}
 		this.logDebug(this.log,
-				"Getting max. Charge/Discharge power values: " + maxChargePower + "/" + maxDischargePower + "W");
-		setValue(this, ManagedSymmetricEss.ChannelId.ALLOWED_CHARGE_POWER, -maxChargePower);
-		setValue(this, ManagedSymmetricEss.ChannelId.ALLOWED_DISCHARGE_POWER, maxDischargePower);
+				"Getting max. Charge/Discharge power values: " + maxChargePowerLimit + "/" + maxDischargePowerLimit + "W");
+		setValue(this, ManagedSymmetricEss.ChannelId.ALLOWED_CHARGE_POWER, -maxChargePowerLimit);
+		setValue(this, ManagedSymmetricEss.ChannelId.ALLOWED_DISCHARGE_POWER, maxDischargePowerLimit);
 		this._setMaxApparentPower(maxApparentPower);
 
 		this.operationalValuesOk = true;
@@ -372,9 +501,10 @@ STATE
 			Channel<T> targetChannel = this.channel(targetChannelId);
 			T raw = value.get();
 			
-			raw = ( T )i_converter.channelToElement(raw);
+			@SuppressWarnings("unchecked")
+			T raw2 = ( T )i_converter.channelToElement(raw);
 
-			value = new Value<T>( sourceChannel, raw );
+			value = new Value<T>( sourceChannel, raw2 );
 			
 			targetChannel.setNextValue(value);
 		};
@@ -463,7 +593,7 @@ STATE
 			}
 		}
 
-		hyBatteryInverter.run( null, activePowerTargetL1 + activePowerTargetL2 + activePowerTargetL3,
+		setPowerValues( null, activePowerTargetL1 + activePowerTargetL2 + activePowerTargetL3,
 				reactivePowerTargetL1 + reactivePowerTargetL2 + reactivePowerTargetL3); //
 
 		this.logDebug(this.log, "Apply Power L1: " + activePowerTargetL1 + "|L2: " + activePowerTargetL2 + "|L3: "
@@ -494,22 +624,19 @@ STATE
 
 		this._setMaxApparentPower(getMaxApparentPower().get().intValue());
 
-		this.maxChargePower = hyBatteryInverter.getMaxChargePower();
-		this.maxDischargePower = hyBatteryInverter.getMaxDischargePower();
-
-		this.logDebug(this.log, "Max Charge/Discharge Power from Inverter: " + this.maxChargePower + "/"
-				+ this.maxDischargePower + "W");
-
-		if (this.maxChargePower == null || this.maxDischargePower == null) {
+		if (this.maxChargePowerLimit == null || this.maxDischargePowerLimit == null) {
 			this.logError(this.log, "power Limits not set.");
 			return;
 		}
+
+		this.logDebug(this.log, "Max Charge/Discharge Power from Inverter: " + this.maxChargePowerLimit + "/"
+				+ this.maxDischargePowerLimit + "W");
 
 		this.logDebug(this.log, "Symm. PowerWanted: " + activePowerTarget);
 
 		
 		// AC Output power (Reg 23, 24, 25) is always positive
-		int acOutputActivePowerSum = hyBatteryInverter.getGridOutputPowerL1().orElse(0) + hyBatteryInverter.getLoadOutputPowerL1().orElse(0);
+		int acOutputActivePowerSum = getGridOutputPowerL1().orElse(0) + getLoadOutputPowerL1().orElse(0);
 
 		if (activePowerTarget == 0) {
 			this.logDebug(this.log, "\n Disabling Charging / Discharging");
@@ -523,32 +650,22 @@ STATE
 			}
 		}
 
-		activePowerTarget = calculateAcInSetpoint(activePowerTarget, acOutputActivePowerSum, this.maxChargePower,
-				this.maxDischargePower);
+		activePowerTarget = calculateAcInSetpoint(activePowerTarget, acOutputActivePowerSum, this.maxChargePowerLimit,
+				this.maxDischargePowerLimit);
 
 		this.logDebug(this.log, "Symm. PowerWanted after clamp and AC-Out adjustment: " + activePowerTarget);
 
 		// Negative for charging
-		setValue(this, ManagedSymmetricEss.ChannelId.ALLOWED_CHARGE_POWER, this.maxChargePower * -1);
+		setValue(this, ManagedSymmetricEss.ChannelId.ALLOWED_CHARGE_POWER, this.maxChargePowerLimit * -1);
 		// Positive for discharging
-		setValue(this, ManagedSymmetricEss.ChannelId.ALLOWED_DISCHARGE_POWER, this.maxDischargePower);
-
-		// if we are in symmetric mode we have to device the wanted power by 3
-		// In single phase
-		int powerPerPhase = activePowerTarget;
-
-		if (this.getPhase() == null) { // no single Phase
-			if (Math.abs(activePowerTarget) > 10) {
-				powerPerPhase = (int) Math.round(activePowerTarget / 3.0);
-			}
-		}
+		setValue(this, ManagedSymmetricEss.ChannelId.ALLOWED_DISCHARGE_POWER, this.maxDischargePowerLimit);
 
 		if (this.config.readOnlyMode()) {
 			this.logDebug(this.log, "Read Only Mode is active. Power is not applied");
 			return;
 		}
 
-		batteryInverter.run(null, activePowerTarget, reactivePower); //
+		setPowerValues(null, activePowerTarget, reactivePower); //
 	}
 
 	@Override
@@ -590,33 +707,6 @@ STATE
 		return activePowerTarget;
 	}
 
-	/**
-	 * Calculates apparent power sum from millivolt and milliampere values.
-	 *
-	 * @param u1_mV      voltage L1 in millivolts
-	 * @param i1_mA      current L1 in milliamperes
-	 * @param u2_mV      voltage L2 in millivolts
-	 * @param i2_mA      current L2 in milliamperes
-	 * @param u3_mV      voltage L3 in millivolts
-	 * @param i3_mA      current L3 in milliamperes
-	 * @param threePhase true if three-phase system, false for single-phase
-	 * @return apparent power sum in VA
-	 */
-	private static int apparentSumVaFromMilli(int u1_mV, int i1_mA, int u2_mV, int i2_mA, int u3_mV, int i3_mA,
-			boolean threePhase) {
-		long microVA = 0L;
-		microVA += 1L * Math.abs(u1_mV) * Math.abs(i1_mA);
-		if (threePhase) {
-			microVA += 1L * Math.abs(u2_mV) * Math.abs(i2_mA);
-			microVA += 1L * Math.abs(u3_mV) * Math.abs(i3_mA);
-		}
-		//
-		long va = microVA / 1_000_000L;
-		if (va < 0) {
-			va = 0;
-		}
-		return (int) Math.min(Integer.MAX_VALUE, va);
-	}
 	/**
 	 * Calculates and sets the active/apparent power values.
 	 *
@@ -720,6 +810,7 @@ STATE
 		}
 		case TOPIC_CYCLE_BEFORE_CONTROLLERS -> {
 	//		this._setMyActivePower();
+	 		this.calculateEnergy();
 		}
 		}
 	}
@@ -730,13 +821,184 @@ STATE
 	}
 
 
-	@Override
-	public Constraint[] getStaticConstraints() throws OpenemsNamedException {
-		if (this.config.readOnlyMode() || !this.operationalValuesOk) {
-			return new Constraint[] { this.createPowerConstraint("Read-Only-Mode", ALL, ACTIVE, EQUALS, 0),
-					this.createPowerConstraint("Read-Only-Mode", ALL, REACTIVE, EQUALS, 0) };
+	/**
+	 * Calculate the Energy values for AC-side.
+	 *
+	 * <p>
+	 * Negative values for Charge; positive for Discharge.
+	 */
+	private void calculateEnergy() {
+
+		var activeAcPower = this.getActivePower().get();
+		if (activeAcPower == null) {
+			// Not available
+			this.calculateChargeEnergy.update(null);
+			this.calculateDischargeEnergy.update(null); //
+		} else if (activeAcPower > 0) {
+			// Discharge
+			this.calculateChargeEnergy.update(0);
+			this.calculateDischargeEnergy.update(activeAcPower);
+		} else if (activeAcPower < 0) {
+			// Charge
+			this.calculateChargeEnergy.update(activeAcPower * -1);
+			this.calculateDischargeEnergy.update(0);
+		} else {
+			// Undefined
+			this.calculateChargeEnergy.update(0);
+			this.calculateDischargeEnergy.update(0);
 		}
-		return new Constraint[] { createPowerConstraint("NoQ", ALL, REACTIVE, EQUALS, 0) };
+
+		// TODO
+		// this._setDcDischargePower(getActivePower().get());
 
 	}
+
+
+	@Override
+	public Timedata getTimedata() {
+		return this.timedata;
+	}
+
+
+	private final AtomicReference<StartStop> startStopTarget = new AtomicReference<>(StartStop.UNDEFINED);
+
+	@Override
+	public void setStartStop(StartStop value) {
+		if (this.startStopTarget.getAndSet(value) != value) {
+			// Set only if value changed
+			this.stateMachine.forceNextState(State.UNDEFINED);
+		}
+	}
+
+	/**
+	 * Gets the current start/stop target based on configuration.
+	 *
+	 * @return the effective {@link StartStop} target
+	 */
+	public StartStop getStartStopTarget() {
+		return switch (this.config.startStop()) {
+		case AUTO -> this.startStopTarget.get();
+		case START -> StartStop.START;
+		case STOP -> StartStop.STOP;
+		};
+	}
+
+	protected final AtomicReference<TargetGridMode> targetGridMode = new AtomicReference<>(TargetGridMode.GO_ON_GRID);
+
+	@Override
+	public void setTargetGridMode(TargetGridMode targetGridMode) {
+		if (this.targetGridMode.getAndSet(targetGridMode) != targetGridMode) {
+			// Set only if value changed
+			this.stateMachine.forceNextState(State.UNDEFINED);
+		}
+	}
+
+	@Override
+	public int getPowerPrecision() {
+		return 100;
+	}
+
+	@Override
+	protected ModbusProtocol defineModbusProtocol() {
+		/*
+		 * GRID_MODE
+ACTIVE_POWER
+REACTIVE_POWER
+APPARENT_POWER
+MAX_APPARENT_POWER
+ACTIVE_CHARGE_ENERGY
+ACTIVE_DISCHARGE_ENERGY
+DC_MIN_VOLTAGE
+DC_MAX_VOLTAGE
+TEMPERATURE_CABINET
+		 */
+//		ALLOWED_CHARGE_POWER
+//		ALLOWED_DISCHARGE_POWER
+
+		return new ModbusProtocol(this, //
+				new FC3ReadRegistersTask(0x4000, Priority.HIGH, //
+						this.m(HycubeEss.ChannelId.SOLAR1_VOLTAGE, new UnsignedWordElement(0x4000)),
+						this.m(HycubeEss.ChannelId.SOLAR1_CURRENT, new UnsignedWordElement(0x4001)),
+						this.m(HycubeEss.ChannelId.SOLAR1_POWER, new UnsignedWordElement(0x4002)),
+						this.m(HycubeEss.ChannelId.SOLAR2_VOLTAGE, new UnsignedWordElement(0x4003)),
+						this.m(HycubeEss.ChannelId.SOLAR2_CURRENT, new UnsignedWordElement(0x4004)),
+						this.m(HycubeEss.ChannelId.SOLAR2_POWER, new UnsignedWordElement(0x4005)),
+						this.m(HycubeEss.ChannelId.INVERTER_L1_VOLTAGE, new UnsignedWordElement(0x4006)),
+						this.m(HycubeEss.ChannelId.INVERTER_L1_CURRENT, new SignedWordElement(0x4007)),
+						this.m(HycubeEss.ChannelId.GRID_L1_VOLTAGE, new UnsignedWordElement(0x4008)),
+						new DummyRegisterElement(0x4009, 0x4009),
+						this.m(HycubeEss.ChannelId.GRID_L1_CURRENT, new SignedWordElement(0x400A)),
+						new DummyRegisterElement(0x400b, 0x4014),
+						this.m(HycubeEss.ChannelId.GRID_FREQUENCY, new UnsignedWordElement(0x4015)),
+						this.m(HycubeEss.ChannelId.GRID_POWER_FACTOR, new SignedWordElement(0x4016)),
+						this.m(HycubeEss.ChannelId.GRID_POWER_L1, new SignedWordElement(0x4017)),
+						this.m(HycubeEss.ChannelId.GRID_REACTIVE_POWER_L1, new SignedWordElement(0x4018)),
+						this.m(HycubeEss.ChannelId.GRID_APPARENT_POWER_L1, new SignedWordElement(0x4019)),
+						this.m(HycubeEss.ChannelId.BATTERY_CURRENT, new SignedWordElement(0x401A)),
+						this.m(HycubeEss.ChannelId.BATTERY_VOLTAGE, new UnsignedWordElement(0x401B)),
+						new DummyRegisterElement(0x401c, 0x401e),
+						this.m(SymmetricEss.ChannelId.ACTIVE_POWER, new SignedWordElement(0x401f)),
+						this.m(HycubeEss.ChannelId.INVERTER_TEMPERATURE, new SignedWordElement(0x4020)),
+						new DummyRegisterElement(0x4021, 0x4023),
+						this.m(HycubeEss.ChannelId.DSP_VERSION, new UnsignedDoublewordElement(0x4024)),
+						new DummyRegisterElement(0x4026, 0x402C),
+						this.m(HycubeEss.ChannelId.LOAD_OUTPUT_VOLTAGE_L1, new SignedWordElement(0x402D)),
+						new DummyRegisterElement(0x402E, 0x402F),
+						this.m(HycubeEss.ChannelId.OFF_GRID_FREQUENCY, new UnsignedWordElement(0x4030), ElementToChannelConverter.SCALE_FACTOR_MINUS_3 ),
+						this.m(HycubeEss.ChannelId.LOAD_OUTPUT_CURRENT_L1, new UnsignedWordElement(0x4031)),
+						new DummyRegisterElement(0x4032, 0x4033),
+						this.m(HycubeEss.ChannelId.LOAD_OUTPUT_POWER_FACTOR, new SignedWordElement(0x4034)),
+						this.m(HycubeEss.ChannelId.LOAD_POWER_L1, new SignedWordElement(0x4035)),
+						this.m(HycubeEss.ChannelId.LOAD_REACTIVE_POWER_L1, new SignedWordElement(0x4036)),
+						this.m(HycubeEss.ChannelId.LOAD_APPARENT_POWER_L1, new SignedWordElement(0x4037))						
+						),
+		new FC3ReadRegistersTask(0x4046, Priority.LOW, //
+				this.m(HycubeEss.ChannelId.STATUS_WORD_4046, new UnsignedWordElement(0x4046)),
+				this.m(HycubeEss.ChannelId.STATUS_WORD_4047, new UnsignedWordElement(0x4047)),
+				new DummyRegisterElement(0x4048, 0x404A),
+				this.m(HycubeEss.ChannelId.STATUS_WORD_404B, new UnsignedWordElement(0x404B))
+				),
+		// Write sleep/wake register
+		new FC6WriteRegisterTask(0x405a,
+				m(HycubeEss.ChannelId.SET_TARGET_BATTERY_POWER, new SignedWordElement(0x405a))),
+		new FC6WriteRegisterTask(0x4058,
+				m(HycubeEss.ChannelId.SET_MAX_CHARGE_CURRENT, new UnsignedWordElement(0x4058))),
+		new FC6WriteRegisterTask(0x4059,
+				m(HycubeEss.ChannelId.SET_MAX_DISCHARGE_CURRENT, new UnsignedWordElement(0x4059)))
+		);
+	}
+
+	/**
+	 * Executes a Soft-Start.
+	 *
+	 * <p>
+	 * Note: Hycube inverters handle soft-start internally when connected via
+	 * Modbus. This method is a placeholder for potential future implementation.
+	 *
+	 * @param switchOn true to enable soft-start, false to disable
+	 * @throws OpenemsNamedException on error
+	 */
+	public void softStart(boolean switchOn) throws OpenemsNamedException {
+		// Victron handles soft-start internally - no action required
+	}
+
+	@Override
+	public ModbusSlaveTable getModbusSlaveTable(AccessMode accessMode) {
+		return new ModbusSlaveTable(//
+				OpenemsComponent.getModbusSlaveNatureTable(accessMode), //
+				ManagedSymmetricEss.getModbusSlaveNatureTable(accessMode), //
+				SymmetricEss.getModbusSlaveNatureTable(accessMode), //
+				ModbusSlaveNatureTable.of(HycubeEss.class, accessMode, 200) //
+						.build());
+	}
+
+	@Override
+	public void _setBatteryPowerTargetValue(int power) throws OpenemsNamedException {
+		
+		IntegerWriteChannel wrChannel = this.channel(HycubeEss.ChannelId.SET_TARGET_BATTERY_POWER);
+		
+		wrChannel.setNextWriteValue(power);
+	}
+
+
 }
