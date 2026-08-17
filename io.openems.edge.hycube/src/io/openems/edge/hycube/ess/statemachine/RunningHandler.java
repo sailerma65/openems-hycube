@@ -1,9 +1,9 @@
-package io.openems.edge.hycube.batteryinverter.statemachine;
+package io.openems.edge.hycube.ess.statemachine;
 
 import io.openems.common.exceptions.OpenemsError.OpenemsNamedException;
 import io.openems.edge.common.startstop.StartStop;
 import io.openems.edge.common.statemachine.StateHandler;
-import io.openems.edge.hycube.batteryinverter.statemachine.StateMachine.State;
+import io.openems.edge.hycube.ess.statemachine.StateMachine.State;
 import io.openems.edge.hycube.ess.HycubeEssImpl;
 
 /**
@@ -31,6 +31,8 @@ public class RunningHandler extends StateHandler<State, Context> {
 		// Enable soft start for smooth power ramp-up
 		inverter.softStart(true);
 
+		System.err.println( "Vorgabewert für Wechselrichter: " + context.setActivePower );
+		
 		inverter._setBatteryPowerTargetValue(context.setActivePower);
 		
 		return State.RUNNING;

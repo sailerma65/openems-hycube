@@ -24,24 +24,17 @@ import org.slf4j.LoggerFactory;
 
 import io.openems.common.exceptions.OpenemsError.OpenemsNamedException;
 import io.openems.common.types.MeterType;
-import io.openems.edge.batteryinverter.api.ManagedSymmetricBatteryInverter;
-import io.openems.edge.batteryinverter.api.SymmetricBatteryInverter;
 import io.openems.edge.bridge.modbus.api.ElementToChannelConverter;
-import io.openems.edge.bridge.modbus.api.ModbusComponent;
 import io.openems.edge.common.channel.Channel;
 import io.openems.edge.common.channel.IntegerReadChannel;
 import io.openems.edge.common.channel.value.Value;
 import io.openems.edge.common.component.AbstractOpenemsComponent;
 import io.openems.edge.common.component.ComponentManager;
 import io.openems.edge.common.component.OpenemsComponent;
-import io.openems.edge.common.startstop.StartStoppable;
 import io.openems.edge.common.type.Phase.SinglePhase;
-import io.openems.edge.ess.api.AsymmetricEss;
-import io.openems.edge.ess.api.SymmetricEss;
-import io.openems.edge.hycube.batteryinverter.HycubeBatteryInverterImpl;
-import io.openems.edge.hycube.batteryinverter.statemachine.StateMachine;
-import io.openems.edge.hycube.batteryinverter.statemachine.StateMachine.State;
+import io.openems.edge.ess.api.ManagedSymmetricEss;
 import io.openems.edge.hycube.ess.HycubeEss;
+import io.openems.edge.hycube.ess.HycubeEssImpl;
 import io.openems.edge.meter.api.ElectricityMeter;
 import io.openems.edge.meter.api.SinglePhaseMeter;
 import io.openems.edge.pvinverter.api.ManagedSymmetricPvInverter;
@@ -76,8 +69,6 @@ public class HycubePvInverterImpl extends AbstractOpenemsComponent implements Hy
 
 	private final Logger log = LoggerFactory.getLogger(HycubePvInverterImpl.class);
 
-	private final StateMachine stateMachine = new StateMachine(State.UNDEFINED);
-
 	@Reference
 	protected ComponentManager componentManager;
 
@@ -101,9 +92,9 @@ public class HycubePvInverterImpl extends AbstractOpenemsComponent implements Hy
 	}
 
 	@Reference(policy = STATIC, policyOption = GREEDY, cardinality = OPTIONAL)
-	private ManagedSymmetricBatteryInverter batteryInverter;
+	private ManagedSymmetricEss ess;
 	
-	private HycubeBatteryInverterImpl hyBatteryInverter;
+	private HycubeEssImpl hyEss;
 	
 	@Activate
 	protected void activate(ComponentContext context, Config config) throws OpenemsNamedException {
@@ -111,14 +102,14 @@ public class HycubePvInverterImpl extends AbstractOpenemsComponent implements Hy
 
 		super.activate(context, config.id(), config.alias(), config.enabled());
 
-		if( OpenemsComponent.updateReferenceFilter(this.cm, this.servicePid(), "BatteryInverter", config.batteryInverter_id()) )
+		if( OpenemsComponent.updateReferenceFilter(this.cm, this.servicePid(), "Ess", config.ess_id()) )
 		{
 			return;
 		}
 		
-		if( batteryInverter instanceof HycubeBatteryInverterImpl pyBat )
+		if( ess instanceof HycubeEssImpl _hyEss )
 		{
-			hyBatteryInverter = pyBat;
+			hyEss = _hyEss;
 		}
 		else
 		{
@@ -154,7 +145,7 @@ public class HycubePvInverterImpl extends AbstractOpenemsComponent implements Hy
 			meterVoltageOtherB = ElectricityMeter.ChannelId.VOLTAGE_L3;
 			
 
-			voltageHycubeChannel = hyBatteryInverter.getGridVoltageChannelL1();
+			voltageHycubeChannel = hyEss.getGridVoltageChannelL1();
 		}
 		case L2 -> { 
 			meterPowerChannel = ElectricityMeter.ChannelId.ACTIVE_POWER_L2;
@@ -170,7 +161,7 @@ public class HycubePvInverterImpl extends AbstractOpenemsComponent implements Hy
 			meterVoltageOtherB = ElectricityMeter.ChannelId.VOLTAGE_L3;
 			
 
-			voltageHycubeChannel = hyBatteryInverter.getGridVoltageChannelL2();
+			voltageHycubeChannel = hyEss.getGridVoltageChannelL2();
 		}
 		case L3 -> { 
 			meterPowerChannel = ElectricityMeter.ChannelId.ACTIVE_POWER_L3;
@@ -185,7 +176,7 @@ public class HycubePvInverterImpl extends AbstractOpenemsComponent implements Hy
 			meterVoltageOtherA = ElectricityMeter.ChannelId.VOLTAGE_L1;
 			meterVoltageOtherB = ElectricityMeter.ChannelId.VOLTAGE_L2;
 			
-			voltageHycubeChannel = hyBatteryInverter.getGridVoltageChannelL3();
+			voltageHycubeChannel = hyEss.getGridVoltageChannelL3();
 		}
 		default -> {
 			this.logError(this.log, "Hycube PV Inverter supports only 1 phase ");
@@ -193,13 +184,13 @@ public class HycubePvInverterImpl extends AbstractOpenemsComponent implements Hy
 		}
 		};
 
-		addCopyListener( hyBatteryInverter.getSumSolarPowerChannel(), ElectricityMeter.ChannelId.ACTIVE_POWER, ElementToChannelConverter.DIRECT_1_TO_1 );
-		addCopyListener( hyBatteryInverter.getSumSolarPowerChannel(), meterPowerChannel, ElementToChannelConverter.DIRECT_1_TO_1 );
+		addCopyListener( hyEss.getSumSolarPowerChannel(), ElectricityMeter.ChannelId.ACTIVE_POWER, ElementToChannelConverter.DIRECT_1_TO_1 );
+		addCopyListener( hyEss.getSumSolarPowerChannel(), meterPowerChannel, ElementToChannelConverter.DIRECT_1_TO_1 );
 
 		addCopyListener( voltageHycubeChannel, ElectricityMeter.ChannelId.VOLTAGE, ElementToChannelConverter.SCALE_FACTOR_MINUS_2 );
 		addCopyListener( voltageHycubeChannel, meterVoltageChannel, ElementToChannelConverter.SCALE_FACTOR_MINUS_2 );
 		
-		addCopyListener( hyBatteryInverter.getOffGridFrequencyChannel(), ElectricityMeter.ChannelId.FREQUENCY, ElementToChannelConverter.SCALE_FACTOR_3 );
+		addCopyListener( hyEss.getOffGridFrequencyChannel(), ElectricityMeter.ChannelId.FREQUENCY, ElementToChannelConverter.SCALE_FACTOR_3 );
 		
 		this.channel(  meterPowerOtherA ).setNextValue( Integer.valueOf( 0 ) );
 		this.channel(  meterPowerOtherB ).setNextValue( Integer.valueOf( 0 ) );
@@ -237,9 +228,10 @@ public class HycubePvInverterImpl extends AbstractOpenemsComponent implements Hy
 			Channel<T> targetChannel = this.channel(targetChannelId);
 			T raw = value.get();
 			
-			raw = ( T )i_converter.channelToElement(raw);
+			@SuppressWarnings("unchecked")
+			T raw2 = ( T )i_converter.channelToElement(raw);
 
-			value = new Value<T>( sourceChannel, raw );
+			value = new Value<T>( sourceChannel, raw2 );
 			
 			targetChannel.setNextValue(value);
 		};
@@ -256,7 +248,7 @@ public class HycubePvInverterImpl extends AbstractOpenemsComponent implements Hy
 
 	@Override
 	public String debugLog() {
-		return this.stateMachine.getCurrentState().asCamelCase();
+		return "";
 	}
 
 	/**

@@ -1,11 +1,11 @@
-package io.openems.edge.hycube.batteryinverter.statemachine;
+package io.openems.edge.hycube.ess.statemachine;
 
 import java.time.Duration;
 import java.time.Instant;
 
 import io.openems.common.exceptions.OpenemsError.OpenemsNamedException;
 import io.openems.edge.common.statemachine.StateHandler;
-import io.openems.edge.hycube.batteryinverter.statemachine.StateMachine.State;
+import io.openems.edge.hycube.ess.statemachine.StateMachine.State;
 
 public class ErrorHandler extends StateHandler<State, Context> {
 

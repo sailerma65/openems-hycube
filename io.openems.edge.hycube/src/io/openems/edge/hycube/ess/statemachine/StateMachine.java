@@ -1,4 +1,4 @@
-package io.openems.edge.hycube.batteryinverter.statemachine;
+package io.openems.edge.hycube.ess.statemachine;
 
 import io.openems.common.types.OptionsEnum;
 import io.openems.edge.common.statemachine.AbstractStateMachine;
