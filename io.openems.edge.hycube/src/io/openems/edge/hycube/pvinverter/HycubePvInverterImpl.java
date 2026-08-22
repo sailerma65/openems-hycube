@@ -102,7 +102,7 @@ public class HycubePvInverterImpl extends AbstractOpenemsComponent implements Hy
 
 		super.activate(context, config.id(), config.alias(), config.enabled());
 
-		if( OpenemsComponent.updateReferenceFilter(this.cm, this.servicePid(), "Ess", config.ess_id()) )
+		if( OpenemsComponent.updateReferenceFilter(this.cm, this.servicePid(), "ess", config.ess_id()) )
 		{
 			return;
 		}

@@ -12,6 +12,7 @@ import static io.openems.common.types.OpenemsType.INTEGER;
 import static io.openems.common.types.OpenemsType.STRING;
 
 import io.openems.common.channel.Level;
+import io.openems.common.channel.Unit;
 import io.openems.edge.battery.api.Battery;
 import io.openems.edge.battery.pylontech.us2000C.statemachine.StateMachine.State;
 import io.openems.edge.common.channel.Channel;
@@ -187,7 +188,21 @@ public interface PylontechUS2000CBattery extends Battery, OpenemsComponent, Star
 		BUZZER_ACTIVE(Doc.of(BOOLEAN) //
 				.accessMode(READ_ONLY) //
 				.text("Buzzer active")),
-		
+		PY_MAX_CHARGE_VOLTAGE(Doc.of(INTEGER) //
+				.accessMode(READ_ONLY)
+				.unit(Unit.DEZIVOLT)),
+		PY_MIN_DISCHARGE_VOLTAGE(Doc.of(INTEGER) //
+				.accessMode(READ_ONLY)
+				.unit(Unit.DEZIVOLT)),
+		PY_MAX_CHARGE_CURRENT(Doc.of(INTEGER) //
+				.accessMode(READ_ONLY)
+				.unit(Unit.DEZIAMPERE)),
+		PY_MAX_DISCHARGE_CURRENT(Doc.of(INTEGER) //
+				.accessMode(READ_ONLY)
+				.unit(Unit.DEZIAMPERE)),
+		PY_BATTERY_VOLTAGE(Doc.of(INTEGER) //
+				.accessMode(READ_ONLY)
+				.unit(Unit.DEZIVOLT)),
 		STATE_MACHINE(Doc.of(State.values()) //
 				.text("Current state of state machine")),
 		RUN_FAILED(Doc.of(Level.FAULT) //
@@ -258,4 +273,49 @@ public interface PylontechUS2000CBattery extends Battery, OpenemsComponent, Star
 		return getDishargeEnabledChannel().value().orElse(Boolean.FALSE);
 	}
 
+	
+	public default Channel<Integer> getMaxChargeCurrentChannel() {
+		return this.channel(ChannelId.PY_MAX_CHARGE_CURRENT );
+	}
+
+	public default Channel<Integer> getMaxDischargeCurrentChannel() {
+		return this.channel(ChannelId.PY_MAX_DISCHARGE_CURRENT );
+	}
+
+	public default Channel<Integer> getMaxChargeVoltageChannel() {
+		return this.channel(ChannelId.PY_MAX_CHARGE_VOLTAGE );
+	}
+
+	public default Channel<Integer> getMinDischargVoltagetChannel() {
+		return this.channel(ChannelId.PY_MIN_DISCHARGE_VOLTAGE );
+	}
+	
+	public default Channel<Integer> getPylontechBatteryVoltageChannel() {
+		return this.channel(ChannelId.PY_BATTERY_VOLTAGE );
+	}
+
+	public default Integer getMaxChargeCurrent()
+	{
+		return getMaxChargeCurrentChannel().value().orElse(0);
+	}
+
+	public default Integer getMaxDischargeCurrent()
+	{
+		return getMaxDischargeCurrentChannel().value().orElse(0);
+	}
+
+	public default Integer getMaxChargeVoltage()
+	{
+		return getMaxChargeCurrentChannel().value().orElse(0);
+	}
+
+	public default Integer getMinDischargeVoltage()
+	{
+		return getMinDischargVoltagetChannel().value().orElse(0);
+	}
+
+	public default Integer getPylontechBatteryVoltage()
+	{
+		return getPylontechBatteryVoltageChannel().value().orElse(0);
+	}
 }

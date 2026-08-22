@@ -582,23 +582,42 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 			channel( PylontechUS2000CBattery.ChannelId.SYSTEM_DISCHARGE_STATUS ).setNextValue( discharging );
 			channel( PylontechUS2000CBattery.ChannelId.SYSTEM_IDLE_STATUS ).setNextValue( !discharging && !charging );
 			
+			Status basicStatus = Status.UNDEFINED;
+			
+			if( charging )
+			{
+				basicStatus = Status.CHARGE;
+			}
+			else if( discharging )
+			{
+				basicStatus = Status.DISCHARGE;
+			}
+			else
+			{
+				basicStatus = Status.IDLE;
+			}
+			
+			channel( PylontechUS2000CBattery.ChannelId.BASIC_STATUS ).setNextValue( basicStatus );
+			
 			stateOfCharge /= m_numberOfDevices;
 			
-			channel( Battery.ChannelId.SOC ).setNextValue(stateOfCharge * 100 );
+			channel( Battery.ChannelId.SOC ).setNextValue( ( int )( stateOfCharge * 100 ) );
 			
-			channel( Battery.ChannelId.VOLTAGE ).setNextValue(voltage);
+			channel( Battery.ChannelId.VOLTAGE ).setNextValue( ( int )voltage );
 			
-			channel( Battery.ChannelId.CURRENT ).setNextValue(current);
+			getPylontechBatteryVoltageChannel().setNextValue( ( int )( voltage * 10 ) );
+			
+			channel( Battery.ChannelId.CURRENT ).setNextValue( ( int )current );
 
-			channel( Battery.ChannelId.CAPACITY ).setNextValue(capacity_Ah * BATTERY_VOLTAGE); 
+			channel( Battery.ChannelId.CAPACITY ).setNextValue( ( int )( capacity_Ah * BATTERY_VOLTAGE ) ); 
 
-			channel( Battery.ChannelId.MIN_CELL_TEMPERATURE ).setNextValue(minCellTemperature);
+			channel( Battery.ChannelId.MIN_CELL_TEMPERATURE ).setNextValue( ( int )minCellTemperature );
 
-			channel( Battery.ChannelId.MAX_CELL_TEMPERATURE ).setNextValue(maxCellTemperature); 
+			channel( Battery.ChannelId.MAX_CELL_TEMPERATURE ).setNextValue( ( int )maxCellTemperature ); 
 
-			channel( Battery.ChannelId.MIN_CELL_VOLTAGE ).setNextValue(minCellVoltage * 1000.0 );
+			channel( Battery.ChannelId.MIN_CELL_VOLTAGE ).setNextValue( ( int )( minCellVoltage * 1000.0 ) );
 
-			channel( Battery.ChannelId.MAX_CELL_VOLTAGE ).setNextValue(maxCellVoltage * 1000.0 ); 
+			channel( Battery.ChannelId.MAX_CELL_VOLTAGE ).setNextValue( (int )( maxCellVoltage * 1000.0 ) ); 
 			
 			
 		}
@@ -643,17 +662,24 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 				dischargeCurrent = 0;
 			}
 
-			channel( BatteryProtection.ChannelId.BP_CHARGE_BMS ).setNextValue(chargeCurrent);
-			channel( BatteryProtection.ChannelId.BP_DISCHARGE_BMS ).setNextValue(dischargeCurrent);
+			channel( BatteryProtection.ChannelId.BP_CHARGE_BMS ).setNextValue( ( int )chargeCurrent );
+			channel( BatteryProtection.ChannelId.BP_DISCHARGE_BMS ).setNextValue( ( int )dischargeCurrent );
 
-			channel( BatteryProtection.ChannelId.BP_CHARGE_MAX_VOLTAGE ).setNextValue(chargeVoltage);
-			channel( BatteryProtection.ChannelId.BP_DISCHARGE_MIN_VOLTAGE ).setNextValue(dischargeVoltage);
+			channel( BatteryProtection.ChannelId.BP_CHARGE_MAX_VOLTAGE ).setNextValue( ( int )chargeVoltage );
+			channel( BatteryProtection.ChannelId.BP_DISCHARGE_MIN_VOLTAGE ).setNextValue( ( int )dischargeVoltage );
 			
-			channel( Battery.ChannelId.CHARGE_MAX_VOLTAGE ).setNextValue(chargeVoltage);
-			channel( Battery.ChannelId.CHARGE_MAX_CURRENT ).setNextValue(chargeCurrent);
+			// following values are set by BatteryProtection
+			channel( Battery.ChannelId.CHARGE_MAX_VOLTAGE ).setNextValue( ( int )chargeVoltage );
+			channel( Battery.ChannelId.CHARGE_MAX_CURRENT ).setNextValue( ( int )chargeCurrent );
 
-			channel( Battery.ChannelId.DISCHARGE_MIN_VOLTAGE ).setNextValue(dischargeVoltage);
-			channel( Battery.ChannelId.DISCHARGE_MAX_CURRENT ).setNextValue(dischargeCurrent);
+			channel( Battery.ChannelId.DISCHARGE_MIN_VOLTAGE ).setNextValue( ( int )dischargeVoltage );
+			channel( Battery.ChannelId.DISCHARGE_MAX_CURRENT ).setNextValue( ( int )dischargeCurrent ); 
+
+			getMaxChargeVoltageChannel().setNextValue( ( int )( chargeVoltage * 10 ) );
+			getMaxChargeCurrentChannel().setNextValue( ( int )( chargeCurrent * 10 ) );
+
+			getMinDischargVoltagetChannel().setNextValue( ( int )( dischargeVoltage * 10 ) );
+			getMaxDischargeCurrentChannel().setNextValue( ( int )( dischargeCurrent * 10 ) ); 
 		}
 
 		if( newAlarmInfo && infoAvailable( m_alarmInfos ) )

@@ -6,7 +6,7 @@ import org.osgi.service.metatype.annotations.ObjectClassDefinition;
 import io.openems.edge.common.type.Phase.SingleOrAllPhase;
 
 @ObjectClassDefinition(//
-		name = "Hycube PV-Inverter RO", //
+		name = "Hycube PV-Inverter", //
 		description = "Implements the Hycube PV inverter (read only).")
 public @interface Config {
 
@@ -14,7 +14,7 @@ public @interface Config {
 	String id() default "pvInverter0";
 
 	@AttributeDefinition(name = "Alias", description = "Human-readable name of this Component; defaults to Component-ID")
-	String alias() default "Hycube Hybrid Inverter (ESS)";
+	String alias() default "Hycube PV Inverter";
 
 	@AttributeDefinition(name = "Phase", description = "true, if three Inverters are configured for master-slave symmetric mode")
 	SingleOrAllPhase phase() default SingleOrAllPhase.L1;

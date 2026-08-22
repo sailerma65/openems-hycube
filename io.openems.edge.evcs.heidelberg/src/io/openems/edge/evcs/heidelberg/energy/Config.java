@@ -32,10 +32,13 @@ import io.openems.edge.meter.api.PhaseRotation;
 	int minHwCurrent() default 6_000;
 
 	@AttributeDefinition(name = "Maximum hardware current", description = "Maximum charging current of the Charger in mA.", required = true)
-	int maxHwCurrent() default 32_000;
+	int maxHwCurrent() default 16_000;
 
 	@AttributeDefinition(name = "Phase rotation", description = "The way in which the phases are physically rotated.")
 	PhaseRotation phaseRotation() default PhaseRotation.L1_L2_L3;
+
+	@AttributeDefinition(name = "Debug Mode", description = "Activates the debug mode")
+	boolean debugMode() default false;
 
 	@AttributeDefinition(name = "Read only", description = "Defines that this evcs is read only.", required = true)
 	boolean readOnly() default true;

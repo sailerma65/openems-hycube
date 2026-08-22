@@ -16,6 +16,7 @@ public class MyConfig extends AbstractComponentConfig implements Config {
 		private PhaseRotation phaseRotation;
 		private boolean limitPhases;
 		private boolean readOnly;
+		private boolean debugMode;
 
 		private Builder() {
 		}
@@ -57,6 +58,11 @@ public class MyConfig extends AbstractComponentConfig implements Config {
 
 		public Builder setReadOnly(boolean readOnly) {
 			this.readOnly = readOnly;
+			return this;
+		}
+
+		public Builder setDebugMode(boolean debugMode) {
+			this.debugMode = debugMode;
 			return this;
 		}
 
@@ -114,6 +120,11 @@ public class MyConfig extends AbstractComponentConfig implements Config {
 	@Override
 	public boolean readOnly() {
 		return this.builder.readOnly;
+	}
+
+	@Override
+	public boolean debugMode() {
+		return this.builder.debugMode;
 	}
 
 }
