@@ -12,15 +12,13 @@ public class GoStoppedHandler extends StateHandler<State, Context> {
 
 	@Override
 	public State runAndGetNextState(Context context) throws OpenemsNamedException {
-		final var inverter = context.getParent();
-
-		// Disable soft start
-		inverter.softStart(false);
+		final var ess = context.getParent();
 
 		// Mark as stopped
-		inverter._setStartStop(StartStop.STOP);
+		ess._setStartStop(StartStop.STOP);
 
-		// Victron doesn't have explicit stop command - transition directly to STOPPED
+		ess.getBattery().stop();
+		
 		return State.STOPPED;
 	}
 

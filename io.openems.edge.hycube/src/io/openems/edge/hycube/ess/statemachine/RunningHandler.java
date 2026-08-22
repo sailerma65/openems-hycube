@@ -18,22 +18,17 @@ public class RunningHandler extends StateHandler<State, Context> {
 
 	@Override
 	public State runAndGetNextState(Context context) throws OpenemsNamedException {
-		final var inverter = context.getParent();
+		final var ess = context.getParent();
 
 		// Check for faults - transition to UNDEFINED if problems detected
-		if (inverter.hasFaults()) {
+		if (ess.hasFaults()) {
 			return State.UNDEFINED;
 		}
 
 		// Mark as started
-		inverter._setStartStop(StartStop.START);
+		ess._setStartStop(StartStop.START);
 
-		// Enable soft start for smooth power ramp-up
-		inverter.softStart(true);
-
-		System.err.println( "Vorgabewert für Wechselrichter: " + context.setActivePower );
-		
-		inverter._setBatteryPowerTargetValue(context.setActivePower);
+		ess.getBattery().start();
 		
 		return State.RUNNING;
 	}

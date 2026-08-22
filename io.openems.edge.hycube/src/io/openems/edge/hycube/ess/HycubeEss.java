@@ -16,12 +16,10 @@ import static io.openems.common.types.OpenemsType.STRING;
 import org.osgi.service.event.EventHandler;
 
 import io.openems.common.channel.AccessMode;
-import io.openems.common.channel.PersistencePriority;
 import io.openems.common.channel.Unit;
 import io.openems.common.exceptions.OpenemsError.OpenemsNamedException;
 import io.openems.common.types.OpenemsType;
 import io.openems.edge.batteryinverter.api.OffGridBatteryInverter;
-import io.openems.edge.batteryinverter.api.OffGridBatteryInverter.TargetGridMode;
 import io.openems.edge.common.channel.Channel;
 import io.openems.edge.common.channel.Doc;
 import io.openems.edge.common.channel.IntegerReadChannel;
@@ -29,11 +27,10 @@ import io.openems.edge.common.channel.WriteChannel;
 import io.openems.edge.common.channel.value.Value;
 import io.openems.edge.common.component.OpenemsComponent;
 import io.openems.edge.common.sum.GridMode;
-import io.openems.edge.ess.api.HybridEss;
 import io.openems.edge.ess.api.ManagedSymmetricEss;
-import io.openems.edge.hycube.ess.statemachine.StateMachine.State;
 import io.openems.edge.hycube.enums.ActiveInactive;
 import io.openems.edge.hycube.enums.EnableDisable;
+import io.openems.edge.hycube.ess.statemachine.StateMachine.State;
 
 /**
  * This interface defines all channels for the Victron Energy Storage System
@@ -376,9 +373,165 @@ public interface HycubeEss extends ManagedSymmetricEss, OpenemsComponent, EventH
 		 */
 		ESS_DISABLE_CHARGE_FLAG(Doc.of(EnableDisable.values())//
 				.accessMode(READ_WRITE)//
-				.text("0=Charge allowed; 1=Charge DISABLED (inverse logic)"));
+				.text("0=Charge allowed; 1=Charge DISABLED (inverse logic)")),
 
+		// ================= Registers for inverter startup phase =================
+		/**
+		 * PCU control policy 0x3501
+		 *
+		 * <p>
+		 * 0002: ACTIVE
+		 */
+		INIT_PCU_CONTROL(Doc.of(INTEGER)//
+				.accessMode(READ_WRITE)//
+				.text("0x0002=ACTIVE")),
 
+		/**
+		 * Remote control register 0x4100
+		 *
+		 * <p>
+		 * 00FF: OFF
+		 * FF00: ON
+		 */
+		INIT_REMOTE_CONTROL(Doc.of(INTEGER)//
+				.accessMode(AccessMode.READ_WRITE)//
+				.text("0x00FF=OFF; 0xFF00=ON")),
+
+		// ================= Registers for inverter startup phase =================
+		/**
+		 * PCU control policy 0x407B
+		 *
+		 * <p>
+		 * 0000: BMS Errors=0
+		 */
+		INIT_RESET_BMS_ERRORS(Doc.of(INTEGER)//
+				.accessMode(READ_WRITE)//
+				.text("0=no errors")),
+
+		// ================= Registers for inverter startup phase =================
+		/**
+		 * EPS Error Clear Mode 0x4078
+		 *
+		 * <p>
+		 * 00EE: OFF (manual operation)
+		 * EE00: ON 
+		 */
+		INIT_EPS_ERROR_CLEAR_MODE(Doc.of(INTEGER)//
+				.accessMode(READ_WRITE)//
+				.text("0x00EE = manual operation")),
+
+		/**
+		 * Battery minimum SOC off grid (0x405E)
+		 *
+		 * <p>
+		 * Vorgabewert 10
+		 */
+		INIT_BATTERY_MINIMUM_SOC_OFF_GRID(Doc.of(INTEGER)//
+				.accessMode(READ_WRITE)//
+				.text("target value 10")),
+
+		/**
+		 * Battery minimum SOC on grid (0x405F)
+		 *
+		 * <p>
+		 * Vorgabewert 10
+		 */
+		INIT_BATTERY_MINIMUM_SOC_ON_GRID(Doc.of(INTEGER)//
+				.accessMode(READ_WRITE)//
+				.text("target value 10")),
+
+		/**
+		 * Battery discharge SOC min (0x405B)
+		 *
+		 * <p>
+		 * Vorgabewert 15
+		 */
+		INIT_BATTERY_DISCHARGE_SOC(Doc.of(INTEGER)//
+				.accessMode(READ_WRITE)//
+				.text("target value 15")),
+
+		/**
+		 * Max. AC output power (0x4064)
+		 *
+		 * <p>
+		 * Vorgabewert 4600
+		 */
+		INIT_MAX_AC_OUTPUT_POWER(Doc.of(INTEGER)//
+				.accessMode(READ_WRITE)//
+				.text("target value 4600")),
+
+		/**
+		 * Grid Code (0x4063)
+		 *
+		 * <p>
+		 * Vorgabewert 3 = Germany
+		 */
+		INIT_GRID_CODE(Doc.of(INTEGER)//
+				.accessMode(READ_WRITE)//
+				.text("target value 3 (Germany)")),
+
+		/**
+		 * Final charging voltage (0x405C)
+		 *
+		 * <p>
+		 * Vorgabewert 53,2 V
+		 */
+		INIT_FINAL_CHARGING_VOLTAGE(Doc.of(INTEGER)//
+				.accessMode(READ_WRITE)//
+				.unit(Unit.DEZIVOLT)
+				.text("target value: 53,2")),
+
+		/**
+		 * Final discharging voltage (0x405D)
+		 *
+		 * <p>
+		 * Vorgabewert 45,5 V
+		 */
+		INIT_FINAL_DISCHARGING_VOLTAGE(Doc.of(INTEGER)//
+				.accessMode(READ_WRITE)//
+				.unit(Unit.DEZIVOLT)
+				.text("target value 45,5")),
+
+		/**
+		 * Emergency power output (40A1)
+		 *
+		 * <p>
+		 * 0x00EE = OFF
+		 * 0xEE00 = ON
+		 */
+		EMERGENCY_POWER_OUTPUT_MODE(Doc.of(INTEGER)//
+				.accessMode(READ_WRITE)//
+				.text("0x00EE=OFF; oxEE00=ON")),
+
+		/**
+		 * Power factor mode (4053)
+		 *
+		 * <p>
+		 * 0 = fixed cos phi
+		 */
+		INIT_POWER_FACTOR_MODE(Doc.of(INTEGER)//
+				.accessMode(READ_WRITE)//
+				.text("0 = fixed cos phi")),
+
+		/**
+		 * COS Phi (4066)
+		 *
+		 * <p>
+		 * Vorgabewert 950 = 0.95
+		 */
+		INIT_POWER_FACTOR(Doc.of(INTEGER)//
+				.accessMode(READ_WRITE)//
+				.text("cos phi")),
+
+		/**
+		 * Reactive Power (4065)
+		 *
+		 * <p>
+		 * Vorgabewert 0
+		 */
+		INIT_REACTIVE_POWER(Doc.of(INTEGER)//
+				.accessMode(READ_WRITE)//
+				.text("reactive power (var)"));
 		
 		private final Doc doc;
 
@@ -671,6 +824,4 @@ public interface HycubeEss extends ManagedSymmetricEss, OpenemsComponent, EventH
 
 
 	public void _setBatteryPowerTargetValue( int power ) throws OpenemsNamedException;
-
-	public void setTargetGridMode(TargetGridMode targetGridMode);
 }

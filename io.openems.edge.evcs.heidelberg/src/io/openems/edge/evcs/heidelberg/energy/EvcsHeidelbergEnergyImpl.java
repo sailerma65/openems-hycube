@@ -18,6 +18,8 @@ import org.osgi.service.event.Event;
 import org.osgi.service.event.EventHandler;
 import org.osgi.service.event.propertytypes.EventTopics;
 import org.osgi.service.metatype.annotations.Designate;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import io.openems.common.exceptions.OpenemsError;
 import io.openems.common.exceptions.OpenemsException;
@@ -36,9 +38,13 @@ import io.openems.edge.common.component.OpenemsComponent;
 import io.openems.edge.common.event.EdgeEventConstants;
 import io.openems.edge.common.taskmanager.Priority;
 import io.openems.edge.evcs.api.CalculateEnergySession;
+import io.openems.edge.evcs.api.ChargeStateHandler;
 import io.openems.edge.evcs.api.Evcs;
+import io.openems.edge.evcs.api.EvcsPower;
 import io.openems.edge.evcs.api.EvcsUtils;
+import io.openems.edge.evcs.api.ManagedEvcs;
 import io.openems.edge.evcs.api.Status;
+import io.openems.edge.evcs.api.WriteHandler;
 import io.openems.edge.meter.api.ElectricityMeter;
 import io.openems.edge.meter.api.PhaseRotation;
 import io.openems.edge.timedata.api.Timedata;
@@ -55,7 +61,7 @@ import io.openems.edge.timedata.api.utils.CalculateEnergyFromPower;
 		EdgeEventConstants.TOPIC_CYCLE_AFTER_PROCESS_IMAGE, //
 		EdgeEventConstants.TOPIC_CYCLE_EXECUTE_WRITE //
 })
-public class EvcsHeidelbergEnergyImpl extends AbstractOpenemsModbusComponent implements EvcsHeidelbergEnergy, Evcs,
+public class EvcsHeidelbergEnergyImpl extends AbstractOpenemsModbusComponent implements EvcsHeidelbergEnergy, ManagedEvcs,
 		ElectricityMeter, ModbusComponent, EventHandler, TimedataProvider, OpenemsComponent {
 
 	private final CalculateEnergyFromPower calculateEnergy = new CalculateEnergyFromPower(this,
@@ -64,17 +70,25 @@ public class EvcsHeidelbergEnergyImpl extends AbstractOpenemsModbusComponent imp
 	private Config config;
 	private StatusConverter statusConverter = new StatusConverter(this);
 
+	private final Logger log = LoggerFactory.getLogger(EvcsHeidelbergEnergyImpl.class);
+
 	private static final int WATCHDOG_DISABLE = 0;
 	private static final int STANDBY_DISABLE = 4;
 	// The Heidelberg Evcs has a scale factor of 10 for Current (i.e. 160 = 16A)
-	private static final int FAILSAFE_CURRENT = 160;
-	private static final int MAXIMUM_ALLOWED_CURRENT = 160;
+	private static final int FAILSAFE_CURRENT = 60;
 
 	@Reference(policy = ReferencePolicy.DYNAMIC, policyOption = ReferencePolicyOption.GREEDY, cardinality = ReferenceCardinality.OPTIONAL)
 	private volatile Timedata timedata = null;
 
 	@Reference
 	protected ConfigurationAdmin cm;
+
+	@Reference
+	private EvcsPower evcsPower;
+
+	private final ChargeStateHandler chargeStateHandler = new ChargeStateHandler(this);
+
+	private final WriteHandler writeHandler = new WriteHandler(this);
 
 	@Override
 	@Reference(policy = ReferencePolicy.STATIC, policyOption = ReferencePolicyOption.GREEDY, cardinality = ReferenceCardinality.MANDATORY)
@@ -87,6 +101,7 @@ public class EvcsHeidelbergEnergyImpl extends AbstractOpenemsModbusComponent imp
 				OpenemsComponent.ChannelId.values(), //
 				ModbusComponent.ChannelId.values(), //
 				ElectricityMeter.ChannelId.values(), //
+				ManagedEvcs.ChannelId.values(), //
 				Evcs.ChannelId.values(), //
 				EvcsHeidelbergEnergy.ChannelId.values() //
 		);
@@ -131,6 +146,8 @@ public class EvcsHeidelbergEnergyImpl extends AbstractOpenemsModbusComponent imp
 			return;
 		}
 		switch (event.getTopic()) {
+		case EdgeEventConstants.TOPIC_CYCLE_EXECUTE_WRITE ->
+			this.writeHandler.run();
 		case EdgeEventConstants.TOPIC_CYCLE_AFTER_PROCESS_IMAGE -> {
 			this.calculateEnergy.update(this.getActivePower().get());
 			this.calculateEnergySession.update(this.statusConverter.isVehicleConnected());
@@ -174,8 +191,6 @@ public class EvcsHeidelbergEnergyImpl extends AbstractOpenemsModbusComponent imp
 			 * with 0 when Modbus communication is established. Everything below 60 (=6A) is
 			 * interpreted as 0A. 160 (=16A) is the maximum.
 			 */
-			this.setFailsafeCurrent(FAILSAFE_CURRENT);
-			this.setMaxCurrent(MAXIMUM_ALLOWED_CURRENT);
 		} catch (OpenemsError.OpenemsNamedException e) {
 			FunctionUtils.doNothing();
 		}
@@ -222,6 +237,81 @@ public class EvcsHeidelbergEnergyImpl extends AbstractOpenemsModbusComponent imp
 	@Override
 	public Timedata getTimedata() {
 		return this.timedata;
+	}
+
+	@Override
+	public EvcsPower getEvcsPower() {
+		return this.evcsPower;
+	}
+
+	@Override
+	public int getConfiguredMinimumHardwarePower() {
+		return EvcsUtils.milliampereToWatt(this.config.minHwCurrent(), 3);
+		
+	}
+
+	@Override
+	public int getConfiguredMaximumHardwarePower() {
+		return EvcsUtils.milliampereToWatt(this.config.maxHwCurrent(), 3);
+	}
+
+	@Override
+	public boolean getConfiguredDebugMode() {
+		return this.config.debugMode();
+	}
+
+	@Override
+	public boolean applyChargePowerLimit(int power) throws Exception {
+		
+		double current = power / 230.0 / 3.0;
+		
+		int deziAmp = ( int ) ( current * 10 );
+		
+		int failSaveCurrent = FAILSAFE_CURRENT;
+		
+		if( deziAmp < 50 )
+		{
+			deziAmp = 0;
+			failSaveCurrent = 0;
+		}
+		else if( deziAmp < 60 )
+		{
+			deziAmp = 60;
+		}
+		
+		setMaxCurrent(deziAmp);
+		
+		setFailsafeCurrent(failSaveCurrent);
+
+		return true;
+	}
+
+	@Override
+	public boolean pauseChargeProcess() throws Exception {
+		applyChargePowerLimit( 0 );
+		return true;
+	}
+
+	@Override
+	public boolean applyDisplayText(String text) throws OpenemsException {
+		return false;
+	}
+
+	@Override
+	public int getMinimumTimeTillChargingLimitTaken() {
+		return 30;
+	}
+
+	@Override
+	public ChargeStateHandler getChargeStateHandler() {
+		return this.chargeStateHandler;
+	}
+
+	@Override
+	public void logDebug(String message) {
+		if (this.config.debugMode()) {
+			this.logInfo(this.log, message);
+		}
 	}
 
 }

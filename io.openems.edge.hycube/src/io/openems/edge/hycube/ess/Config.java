@@ -15,7 +15,7 @@ public @interface Config {
 	String id() default "ess0";
 
 	@AttributeDefinition(name = "Alias", description = "Human-readable name of this Component; defaults to Component-ID")
-	String alias() default "";
+	String alias() default "Hycube ESS System";
 
 	@AttributeDefinition(name = "Is enabled?", description = "Is this Component enabled?")
 	boolean enabled() default true;
@@ -39,13 +39,19 @@ public @interface Config {
 	int maxDischargePower() default 4600;
 
 	@AttributeDefinition(name = "Start/stop behaviour?", description = "Should this Component be forced to start or stop?")
-	StartStopConfig startStop() default StartStopConfig.AUTO;
+	StartStopConfig startStop() default StartStopConfig.START;
 
 	@AttributeDefinition(name = "Read-Only mode", description = "Enables Read-Only mode")
 	boolean readOnlyMode() default false;
 
 	@AttributeDefinition(name = "Hycube Battery ID", description = "Battery-ID which the batteryinverter is connected to")
 	String battery_id() default "battery0";
+
+	@AttributeDefinition(name = "Denkovi Board ID", description = "Digital output board")
+	String io_id() default "io0";
+
+	@AttributeDefinition(name = "Battery switch pin", description = "Denkovi Board output pin to switch battery connection")
+	int io_battery_pin() default 7;
 
 	String webconsole_configurationFactory_nameHint() default "Hycube ESS [{id}]";
 

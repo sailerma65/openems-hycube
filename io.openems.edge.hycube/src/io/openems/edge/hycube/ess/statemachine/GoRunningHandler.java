@@ -4,6 +4,7 @@ import io.openems.common.exceptions.OpenemsError.OpenemsNamedException;
 import io.openems.edge.batteryinverter.api.OffGridBatteryInverter.TargetGridMode;
 import io.openems.edge.common.statemachine.StateHandler;
 import io.openems.edge.common.sum.GridMode;
+import io.openems.edge.hycube.ess.HycubeEssImpl;
 import io.openems.edge.hycube.ess.statemachine.StateMachine.State;
 
 /**
@@ -17,26 +18,15 @@ public class GoRunningHandler extends StateHandler<State, Context> {
 
 	@Override
 	public State runAndGetNextState(Context context) throws OpenemsNamedException {
-		final var inverter = context.getParent();
+		final HycubeEssImpl ess = context.getParent();
 
 		// Check for faults before proceeding
-		if (inverter.hasFaults()) {
+		if (ess.hasFaults()) {
 			return State.ERROR;
 		}
 
-		// Set grid mode based on target from context
-		// Victron supports both ON_GRID and OFF_GRID operation
-		if (context.targetGridMode == TargetGridMode.GO_ON_GRID) {
-			inverter._setGridMode(GridMode.ON_GRID);
-		} else if (context.targetGridMode == TargetGridMode.GO_OFF_GRID) {
-			inverter._setGridMode(GridMode.OFF_GRID);
-		}
+		ess.initializationDone();
 
-		// Enable soft start for smooth power ramp-up
-		inverter.softStart(true);
-
-		// Victron is ready when Modbus connection is established
-		// No explicit start command needed - transition directly to RUNNING
 		return State.RUNNING;
 	}
 }
