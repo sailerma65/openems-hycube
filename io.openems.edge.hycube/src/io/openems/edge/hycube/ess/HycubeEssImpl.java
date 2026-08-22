@@ -10,6 +10,7 @@ import static org.osgi.service.component.annotations.ReferenceCardinality.OPTION
 import static org.osgi.service.component.annotations.ReferencePolicy.STATIC;
 import static org.osgi.service.component.annotations.ReferencePolicyOption.GREEDY;
 
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import io.openems.edge.io.api.DigitalOutput;
@@ -123,7 +124,14 @@ public class HycubeEssImpl extends AbstractOpenemsModbusComponent
 
 	private boolean operationalValuesOk = false;
 	
+	private volatile boolean doSetChannelsAfterInit = false;
+	
 	private Integer recentSetPowerTargetValue = null;
+	
+	private Integer recentSetMaxChargeVoltageValue = null;
+	private Integer recentSetMinDischargeVoltageValue = null;
+	private Integer recentSetMaxChargeCurrentValue = null;
+	private Integer recentSetMaxDischargeCurrentValue = null;
 
 	public static final int BATTERY_VOLTAGE = 48; // for capacity calculation we cannot use current voltage
 
@@ -139,8 +147,8 @@ public class HycubeEssImpl extends AbstractOpenemsModbusComponent
 			new InitValidation( HycubeEss.ChannelId.STATUS_WORD_404B ), // 0x404B
 			new InitValidation( HycubeEss.ChannelId.INIT_POWER_FACTOR_MODE, 0 ), // 0x4053
 			new InitValidation( HycubeEss.ChannelId.INIT_BATTERY_DISCHARGE_SOC, 15 ), // 0x405B
-			new InitValidation( HycubeEss.ChannelId.INIT_FINAL_CHARGING_VOLTAGE, 480, 540, 532 ), // 0x405C
-			new InitValidation( HycubeEss.ChannelId.INIT_FINAL_DISCHARGING_VOLTAGE, 420, 460, 455 ), // 0x405D
+			new InitValidation( HycubeEss.ChannelId.FINAL_CHARGING_VOLTAGE, 480, 540, 532 ), // 0x405C
+			new InitValidation( HycubeEss.ChannelId.FINAL_DISCHARGING_VOLTAGE, 420, 460, 455 ), // 0x405D
 			new InitValidation( HycubeEss.ChannelId.INIT_BATTERY_MINIMUM_SOC_OFF_GRID, 10 ), // 0x405E
 			new InitValidation( HycubeEss.ChannelId.INIT_BATTERY_MINIMUM_SOC_ON_GRID, 10 ), // 0x405F
 			new InitValidation( HycubeEss.ChannelId.INIT_GRID_CODE, 3 ), // 0x4063
@@ -293,32 +301,107 @@ public class HycubeEssImpl extends AbstractOpenemsModbusComponent
 			
 			solarSum.setNextValue( sum );
 		} );
-		
-/*		IntegerReadChannel recommendedVoltageChannel = battery.getVoltageChannel();
-		
-		IntegerReadChannel allowedChargePowerChannel = this.channel( ManagedSymmetricEss.ChannelId.ALLOWED_CHARGE_POWER );
-		
-		battery.getChargeMaxCurrentChannel().onSetNextValue( ( chargeCurrent ) -> 
+
+		if( battery instanceof PylontechUS2000CBattery pyBattery )
 		{
-			int voltage = recommendedVoltageChannel.getNextValue().get();
+			setMaxChargingVoltage( pyBattery.getMaxChargeVoltage() );
 			
-			int power = voltage * ( - chargeCurrent.get() );
+			pyBattery.getMaxChargeVoltageChannel().onSetNextValue( value -> 
+			{
+				setMaxChargingVoltage( value.get() );
+			} );
 			
-			allowedChargePowerChannel.setNextValue( power );
-		} );
-		
-		IntegerReadChannel allowedDishargePowerChannel = this.channel( ManagedSymmetricEss.ChannelId.ALLOWED_DISCHARGE_POWER );
-		
-		battery.getDischargeMaxCurrentChannel().onSetNextValue( ( chargeCurrent ) -> 
-		{
-			int voltage = recommendedVoltageChannel.getNextValue().get();
+			setMaxChargeCurrent( pyBattery.getMaxChargeCurrent() );
+
+			pyBattery.getMaxChargeCurrentChannel().onSetNextValue( value -> 
+			{
+				setMaxChargeCurrent( value.get() );
+			} );
+
+			setMinDischargingVoltage( pyBattery.getMinDischargeVoltage() );
 			
-			int power = - voltage * chargeCurrent.get();
+			pyBattery.getMinDischargVoltagetChannel().onSetNextValue( value -> 
+			{
+				setMinDischargingVoltage( value.get() );
+			} );
+
+			setMaxDishargeCurrent( pyBattery.getMaxDischargeCurrent() );
 			
-			allowedDishargePowerChannel.setNextValue( power );
-		} ); */
+			pyBattery.getMaxDischargeCurrentChannel().onSetNextValue( value -> 
+			{
+				setMaxDishargeCurrent( value.get() );
+			} );
+		}
+
 		
 		addCopyListener( battery.getSocChannel(), SymmetricEss.ChannelId.SOC, ElementToChannelConverter.DIRECT_1_TO_1 );
+	}
+
+	private void setMaxChargingVoltage( int i_voltage )
+	{
+		if( recentSetMaxChargeVoltageValue == null || recentSetMaxChargeVoltageValue != i_voltage )
+		{
+			IntegerWriteChannel channel = this.channel( HycubeEss.ChannelId.FINAL_CHARGING_VOLTAGE );
+			
+			try {
+				channel.setNextWriteValue(  i_voltage );
+				channel.setNextValue(  i_voltage );
+			} catch (OpenemsNamedException e) {
+				logError( this.log, "Error writing FINAL_CHARGING_VOLTAGE" + e.getMessage() );
+			}
+			recentSetMaxChargeVoltageValue = i_voltage;
+		}
+			
+	}
+
+	private void setMinDischargingVoltage( int i_voltage )
+	{
+		if( recentSetMinDischargeVoltageValue == null || recentSetMinDischargeVoltageValue != i_voltage )
+		{
+			IntegerWriteChannel channel = this.channel( HycubeEss.ChannelId.FINAL_DISCHARGING_VOLTAGE );
+			
+			try {
+				channel.setNextWriteValue(  i_voltage );
+				channel.setNextValue(  i_voltage );
+			} catch (OpenemsNamedException e) {
+				logError( this.log, "Error writing FINAL_DISCHARGING_VOLTAGE" + e.getMessage() );
+			}
+			recentSetMinDischargeVoltageValue = i_voltage;
+		}
+	}
+
+	private void setMaxChargeCurrent( int i_current )
+	{
+		if( recentSetMaxChargeCurrentValue == null || recentSetMaxChargeCurrentValue == i_current )
+		{
+			IntegerWriteChannel channel = this.channel( HycubeEss.ChannelId.SET_MAX_CHARGE_CURRENT );
+			
+			try {
+				channel.setNextWriteValue(  i_current );
+				channel.setNextValue(  i_current );
+			} catch (OpenemsNamedException e) {
+				logError( this.log, "Error writing SET_MAX_CHARGE_CURRENT" + e.getMessage() );
+			}
+			recentSetMaxChargeCurrentValue = i_current;
+		}
+
+	}
+
+	private void setMaxDishargeCurrent( int i_current )
+	{
+		if( recentSetMaxDischargeCurrentValue == null || recentSetMaxDischargeCurrentValue != i_current )
+		{
+			IntegerWriteChannel channel = this.channel( HycubeEss.ChannelId.SET_MAX_DISCHARGE_CURRENT );
+			
+			try {
+				channel.setNextWriteValue(  i_current );
+				channel.setNextValue(  i_current );
+			} catch (OpenemsNamedException e) {
+				logError( this.log, "Error writing SET_MAX_DISCHARGE_CURRENT" + e.getMessage() );
+			}
+			recentSetMaxDischargeCurrentValue = i_current;
+		}
+
 	}
 
 	@Override
@@ -868,6 +951,10 @@ public class HycubeEssImpl extends AbstractOpenemsModbusComponent
 		}
 		case TOPIC_CYCLE_AFTER_PROCESS_IMAGE -> {
 			this.handleStateMachine();
+			if( doSetChannelsAfterInit )
+			{
+				seSetInitChannelValues();
+			}
 		}
 		}
 	}
@@ -971,8 +1058,8 @@ public class HycubeEssImpl extends AbstractOpenemsModbusComponent
 						this.m(HycubeEss.ChannelId.SET_MAX_DISCHARGE_CURRENT, new UnsignedWordElement(0x4059)),
 						this.m(HycubeEss.ChannelId.SET_TARGET_BATTERY_POWER, new SignedWordElement(0x405a)),
 						this.m(HycubeEss.ChannelId.INIT_BATTERY_DISCHARGE_SOC, new UnsignedWordElement(0x405B)),
-						this.m(HycubeEss.ChannelId.INIT_FINAL_CHARGING_VOLTAGE, new UnsignedWordElement(0x405C)),
-						this.m(HycubeEss.ChannelId.INIT_FINAL_DISCHARGING_VOLTAGE, new UnsignedWordElement(0x405D)),
+						this.m(HycubeEss.ChannelId.FINAL_CHARGING_VOLTAGE, new UnsignedWordElement(0x405C)),
+						this.m(HycubeEss.ChannelId.FINAL_DISCHARGING_VOLTAGE, new UnsignedWordElement(0x405D)),
 						this.m(HycubeEss.ChannelId.INIT_BATTERY_MINIMUM_SOC_OFF_GRID, new UnsignedWordElement(0x405E)),
 						this.m(HycubeEss.ChannelId.INIT_BATTERY_MINIMUM_SOC_ON_GRID, new UnsignedWordElement(0x405F)),
 						new DummyRegisterElement(0x4060, 0x4062),
@@ -1012,10 +1099,10 @@ public class HycubeEssImpl extends AbstractOpenemsModbusComponent
 							this.m(HycubeEss.ChannelId.INIT_BATTERY_DISCHARGE_SOC, new UnsignedWordElement(0x405B))),
 
 					new FC6WriteRegisterTask(0x405C,  //
-							this.m(HycubeEss.ChannelId.INIT_FINAL_CHARGING_VOLTAGE, new UnsignedWordElement(0x405C))),
+							this.m(HycubeEss.ChannelId.FINAL_CHARGING_VOLTAGE, new UnsignedWordElement(0x405C))),
 
 					new FC6WriteRegisterTask(0x405D,  //
-							this.m(HycubeEss.ChannelId.INIT_FINAL_DISCHARGING_VOLTAGE, new UnsignedWordElement(0x405D))),
+							this.m(HycubeEss.ChannelId.FINAL_DISCHARGING_VOLTAGE, new UnsignedWordElement(0x405D))),
 
 					new FC6WriteRegisterTask(0x405E,  //
 							this.m(HycubeEss.ChannelId.INIT_BATTERY_MINIMUM_SOC_OFF_GRID, new UnsignedWordElement(0x405E))),
@@ -1052,7 +1139,7 @@ public class HycubeEssImpl extends AbstractOpenemsModbusComponent
 						new DummyRegisterElement(0x4009, 0x4009),
 						this.m(HycubeEss.ChannelId.GRID_L1_CURRENT, new SignedWordElement(0x400A)),
 						new DummyRegisterElement(0x400b, 0x4014),
-						this.m(HycubeEss.ChannelId.GRID_FREQUENCY, new UnsignedWordElement(0x4015)),
+						this.m(HycubeEss.ChannelId.GRID_FREQUENCY, new UnsignedWordElement(0x4015), ElementToChannelConverter.SCALE_FACTOR_1 ),
 						this.m(HycubeEss.ChannelId.GRID_POWER_FACTOR, new SignedWordElement(0x4016)),
 						this.m(HycubeEss.ChannelId.GRID_POWER_L1, new SignedWordElement(0x4017)),
 						this.m(HycubeEss.ChannelId.GRID_REACTIVE_POWER_L1, new SignedWordElement(0x4018)),
@@ -1067,7 +1154,7 @@ public class HycubeEssImpl extends AbstractOpenemsModbusComponent
 						new DummyRegisterElement(0x4026, 0x402C),
 						this.m(HycubeEss.ChannelId.LOAD_OUTPUT_VOLTAGE_L1, new SignedWordElement(0x402D)),
 						new DummyRegisterElement(0x402E, 0x402F),
-						this.m(HycubeEss.ChannelId.OFF_GRID_FREQUENCY, new UnsignedWordElement(0x4030), ElementToChannelConverter.SCALE_FACTOR_MINUS_3 ),
+						this.m(HycubeEss.ChannelId.OFF_GRID_FREQUENCY, new UnsignedWordElement(0x4030), ElementToChannelConverter.SCALE_FACTOR_MINUS_2 ),
 						this.m(HycubeEss.ChannelId.LOAD_OUTPUT_CURRENT_L1, new UnsignedWordElement(0x4031)),
 						new DummyRegisterElement(0x4032, 0x4033),
 						this.m(HycubeEss.ChannelId.LOAD_OUTPUT_POWER_FACTOR, new SignedWordElement(0x4034)),
@@ -1084,8 +1171,15 @@ public class HycubeEssImpl extends AbstractOpenemsModbusComponent
 		// Write sleep/wake register
 		new FC6WriteRegisterTask(0x405a,
 				m(HycubeEss.ChannelId.SET_TARGET_BATTERY_POWER, new SignedWordElement(0x405a))),
+		new FC6WriteRegisterTask(0x405C,  //
+				this.m(HycubeEss.ChannelId.FINAL_CHARGING_VOLTAGE, new UnsignedWordElement(0x405C))),
+
+		new FC6WriteRegisterTask(0x405D,  //
+				this.m(HycubeEss.ChannelId.FINAL_DISCHARGING_VOLTAGE, new UnsignedWordElement(0x405D))),
+
 		new FC6WriteRegisterTask(0x4058,
 				m(HycubeEss.ChannelId.SET_MAX_CHARGE_CURRENT, new UnsignedWordElement(0x4058))),
+		
 		new FC6WriteRegisterTask(0x4059,
 				m(HycubeEss.ChannelId.SET_MAX_DISCHARGE_CURRENT, new UnsignedWordElement(0x4059))));
 	}
@@ -1122,6 +1216,7 @@ public class HycubeEssImpl extends AbstractOpenemsModbusComponent
 			recentSetPowerTargetValue = power;
 			
 			wrChannel.setNextWriteValue(power);
+			wrChannel.setNextValue(power);
 		}
 	}
 
@@ -1141,13 +1236,46 @@ public class HycubeEssImpl extends AbstractOpenemsModbusComponent
 		{
 			needsInit.set( Boolean.FALSE );
 			
+			for( InitValidation validation : getInitChannelList() )
+			{
+				Optional<?> opt = channel( validation.getChannelId() ).value().asOptional();
+				
+				if( opt.isPresent() )
+				{
+					validation.setActualValue( opt.get() );
+				}
+				else
+				{
+					validation.setActualValue(null);
+				}
+			}
 			getBridgeModbus().removeProtocol( id() );
 			getBridgeModbus().addProtocol( id(), getRuntimeModbusProtocol() );
+			
+			doSetChannelsAfterInit = true;
 		}
 		
 		recentSetPowerTargetValue = null;
+		recentSetMaxChargeCurrentValue = null;
+		recentSetMaxDischargeCurrentValue = null;
+		recentSetMaxChargeVoltageValue = null;
+		recentSetMinDischargeVoltageValue = null;
 		
 		digOutBoard.digitalOutputChannels()[ config.io_battery_pin() ].setNextValue( Boolean.TRUE );
+	}
+	
+	private void seSetInitChannelValues()
+	{
+		for( InitValidation validation : getInitChannelList() )
+		{
+			Object obj = validation.getActualValue();
+			
+			if( obj != null )
+			{
+				channel( validation.getChannelId() ).setNextValue( obj );
+			}
+		}
+		doSetChannelsAfterInit = false;
 	}
 	
 	public InitValidation[] getInitChannelList()

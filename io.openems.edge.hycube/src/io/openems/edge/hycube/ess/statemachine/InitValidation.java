@@ -8,6 +8,7 @@ public class InitValidation {
 	private Integer checkValue;
 	private Integer checkMin;
 	private Integer checkMax;
+	private Object actualValue;
 	
 	public InitValidation( ChannelId i_channel, int i_checkValue )
 	{
@@ -31,6 +32,16 @@ public class InitValidation {
 		validated = false;
 	}
 
+	public void setActualValue( Object i_obj )
+	{
+		actualValue = i_obj;
+	}
+	
+	public Object getActualValue()
+	{
+		return actualValue;
+	}
+	
 	public boolean isValidated()
 	{
 		return validated || checkValue == null;

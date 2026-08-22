@@ -556,7 +556,7 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 					discharging = true;
 				}
 				
-				capacity_Ah = current + m_moduleValues[ i ].remainingCapacity();
+				capacity_Ah = capacity_Ah + m_moduleValues[ i ].remainingCapacity();
 				
 				for( int j = 0; j < m_moduleValues[i].numberOfCells(); j++ )
 				{
