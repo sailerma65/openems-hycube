@@ -160,10 +160,12 @@ public interface HycubeEss extends ManagedSymmetricEss, OpenemsComponent, EventH
 				.text("Battery power target value")),
 		
 		SET_MAX_CHARGE_CURRENT(Doc.of(INTEGER)//
+				.accessMode(READ_WRITE)
 				.unit(Unit.DEZIAMPERE)//
 				.text("Max. battery charge current")),
 				
 		SET_MAX_DISCHARGE_CURRENT(Doc.of(INTEGER)//
+				.accessMode(READ_WRITE)
 				.unit(Unit.DEZIAMPERE)//
 				.text("Max. battery discharge current")),
 				
@@ -476,7 +478,7 @@ public interface HycubeEss extends ManagedSymmetricEss, OpenemsComponent, EventH
 		 * <p>
 		 * Vorgabewert 53,2 V
 		 */
-		INIT_FINAL_CHARGING_VOLTAGE(Doc.of(INTEGER)//
+		FINAL_CHARGING_VOLTAGE(Doc.of(INTEGER)//
 				.accessMode(READ_WRITE)//
 				.unit(Unit.DEZIVOLT)
 				.text("target value: 53,2")),
@@ -487,7 +489,7 @@ public interface HycubeEss extends ManagedSymmetricEss, OpenemsComponent, EventH
 		 * <p>
 		 * Vorgabewert 45,5 V
 		 */
-		INIT_FINAL_DISCHARGING_VOLTAGE(Doc.of(INTEGER)//
+		FINAL_DISCHARGING_VOLTAGE(Doc.of(INTEGER)//
 				.accessMode(READ_WRITE)//
 				.unit(Unit.DEZIVOLT)
 				.text("target value 45,5")),
