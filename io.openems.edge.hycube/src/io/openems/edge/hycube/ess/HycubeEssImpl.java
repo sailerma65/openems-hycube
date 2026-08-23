@@ -372,7 +372,7 @@ public class HycubeEssImpl extends AbstractOpenemsModbusComponent
 
 	private void setMaxChargeCurrent( int i_current )
 	{
-		if( recentSetMaxChargeCurrentValue == null || recentSetMaxChargeCurrentValue == i_current )
+		if( recentSetMaxChargeCurrentValue == null || recentSetMaxChargeCurrentValue != i_current )
 		{
 			IntegerWriteChannel channel = this.channel( HycubeEss.ChannelId.SET_MAX_CHARGE_CURRENT );
 			
