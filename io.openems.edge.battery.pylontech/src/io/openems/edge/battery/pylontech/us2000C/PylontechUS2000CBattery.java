@@ -306,7 +306,7 @@ public interface PylontechUS2000CBattery extends Battery, OpenemsComponent, Star
 
 	public default Integer getMaxChargeVoltage()
 	{
-		return getMaxChargeCurrentChannel().value().orElse(0);
+		return getMaxChargeVoltageChannel().value().orElse(0);
 	}
 
 	public default Integer getMinDischargeVoltage()

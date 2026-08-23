@@ -35,7 +35,9 @@ public interface EvcsHeidelbergEnergy extends ManagedEvcs, ElectricityMeter, Ope
 		MAX_CURRENT(Doc.of(OpenemsType.INTEGER) //
 				.accessMode(AccessMode.READ_WRITE).unit(Unit.DEZIAMPERE)), //
 		FAILSAFE_CURRENT(Doc.of(OpenemsType.INTEGER) //
-				.accessMode(AccessMode.READ_WRITE).unit(Unit.DEZIAMPERE)//
+				.accessMode(AccessMode.READ_WRITE).unit(Unit.DEZIAMPERE)),//
+		TEMPERATURE_PCB(Doc.of(OpenemsType.INTEGER) //
+						.unit(Unit.DEZIDEGREE_CELSIUS) //
 		);
 
 		private final Doc doc;

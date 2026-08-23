@@ -1,6 +1,7 @@
 package io.openems.edge.evcs.heidelberg.energy;
 
 import static io.openems.edge.bridge.modbus.api.ElementToChannelConverter.SCALE_FACTOR_2;
+import static io.openems.edge.bridge.modbus.api.ElementToChannelConverter.SCALE_FACTOR_3;
 import static io.openems.edge.meter.api.ElectricityMeter.calculateAverageVoltageFromPhases;
 import static io.openems.edge.meter.api.ElectricityMeter.ChannelId.ACTIVE_PRODUCTION_ENERGY;
 
@@ -31,7 +32,9 @@ import io.openems.edge.bridge.modbus.api.ModbusComponent;
 import io.openems.edge.bridge.modbus.api.ModbusProtocol;
 import io.openems.edge.bridge.modbus.api.element.DummyRegisterElement;
 import io.openems.edge.bridge.modbus.api.element.SignedWordElement;
+import io.openems.edge.bridge.modbus.api.element.UnsignedDoublewordElement;
 import io.openems.edge.bridge.modbus.api.element.UnsignedWordElement;
+import io.openems.edge.bridge.modbus.api.element.WordOrder;
 import io.openems.edge.bridge.modbus.api.task.FC4ReadInputRegistersTask;
 import io.openems.edge.bridge.modbus.api.task.FC6WriteRegisterTask;
 import io.openems.edge.common.component.OpenemsComponent;
@@ -100,8 +103,8 @@ public class EvcsHeidelbergEnergyImpl extends AbstractOpenemsModbusComponent imp
 		super(//
 				OpenemsComponent.ChannelId.values(), //
 				ModbusComponent.ChannelId.values(), //
-				ElectricityMeter.ChannelId.values(), //
 				ManagedEvcs.ChannelId.values(), //
+				ElectricityMeter.ChannelId.values(), //
 				Evcs.ChannelId.values(), //
 				EvcsHeidelbergEnergy.ChannelId.values() //
 		);
@@ -208,12 +211,16 @@ public class EvcsHeidelbergEnergyImpl extends AbstractOpenemsModbusComponent imp
 						m(phaseRotated.channelCurrentL1(), new UnsignedWordElement(offset + 6), SCALE_FACTOR_2), //
 						m(phaseRotated.channelCurrentL2(), new UnsignedWordElement(offset + 7), SCALE_FACTOR_2), //
 						m(phaseRotated.channelCurrentL3(), new UnsignedWordElement(offset + 8), SCALE_FACTOR_2), //
-						new DummyRegisterElement(offset + 9), //
-						m(phaseRotated.channelVoltageL1(), new UnsignedWordElement(offset + 10)), //
-						m(phaseRotated.channelVoltageL2(), new UnsignedWordElement(offset + 11)), //
-						m(phaseRotated.channelVoltageL3(), new UnsignedWordElement(offset + 12)), //
-						new DummyRegisterElement(offset + 13), //
-						m(ElectricityMeter.ChannelId.ACTIVE_POWER, new UnsignedWordElement(offset + 14))), //
+						m(EvcsHeidelbergEnergy.ChannelId.TEMPERATURE_PCB, new UnsignedWordElement(offset + 9)), //
+						m(phaseRotated.channelVoltageL1(), new UnsignedWordElement(offset + 10), SCALE_FACTOR_3), //
+						m(phaseRotated.channelVoltageL2(), new UnsignedWordElement(offset + 11), SCALE_FACTOR_3), //
+						m(phaseRotated.channelVoltageL3(), new UnsignedWordElement(offset + 12), SCALE_FACTOR_3), //
+						m(EvcsHeidelbergEnergy.ChannelId.EXTERNAL_LOCK_STATE, new UnsignedWordElement(offset + 13)), //
+						m(ElectricityMeter.ChannelId.ACTIVE_POWER, new UnsignedWordElement(offset + 14)),
+						m(ElectricityMeter.ChannelId.ACTIVE_CONSUMPTION_ENERGY, new UnsignedDoublewordElement(offset + 15).wordOrder(WordOrder.LSWMSW)),
+						m(Evcs.ChannelId.ENERGY_SESSION, new UnsignedDoublewordElement(offset + 17).wordOrder(WordOrder.LSWMSW))
+						
+						), //
 				new FC6WriteRegisterTask(offset + 257, //
 						m(EvcsHeidelbergEnergy.ChannelId.WATCHDOG_TIME, new SignedWordElement(offset + 257))), //
 				new FC6WriteRegisterTask(offset + 258, //
