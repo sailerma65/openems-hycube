@@ -7,6 +7,7 @@ Bundle-Version: 1.0.0.${tstamp}
 	${buildpath},\
 	io.openems.common,\
 	io.openems.edge.battery.api,\
+	io.openems.edge.io.api,\
 	io.openems.edge.batteryinverter.api,\
 	io.openems.edge.bridge.modbus,\
 	io.openems.edge.common,\
@@ -19,7 +20,7 @@ Bundle-Version: 1.0.0.${tstamp}
 	io.openems.edge.pvinverter.api,\
 	io.openems.edge.timedata.api,\
 	io.openems.j2mod,\
-	io.openems.edge.battery.pylontech;version=snapshot,\
-	io.openems.edge.io.api;version=snapshot
+	io.openems.edge.battery.pylontech,\
+	io.openems.common.bridge.http
 -testpath: \
 	${testpath}
