@@ -34,7 +34,7 @@ export class AppHeaderComponent implements OnInit, OnDestroy, AfterViewChecked {
 
     public environment = environment;
     public backUrl: string | boolean = "/";
-    public enableSideMenu: boolean = false;
+    public enableSideMenu: boolean = true;
     public currentPage: "EdgeSettings" | "Other" | "IndexLive" | "IndexHistory" = "Other";
     public isSystemLogEnabled: boolean = false;
 

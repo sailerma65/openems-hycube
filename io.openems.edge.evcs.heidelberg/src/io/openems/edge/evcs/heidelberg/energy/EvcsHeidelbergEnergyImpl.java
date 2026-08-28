@@ -30,7 +30,6 @@ import io.openems.edge.bridge.modbus.api.AbstractOpenemsModbusComponent;
 import io.openems.edge.bridge.modbus.api.BridgeModbus;
 import io.openems.edge.bridge.modbus.api.ModbusComponent;
 import io.openems.edge.bridge.modbus.api.ModbusProtocol;
-import io.openems.edge.bridge.modbus.api.element.DummyRegisterElement;
 import io.openems.edge.bridge.modbus.api.element.SignedWordElement;
 import io.openems.edge.bridge.modbus.api.element.UnsignedDoublewordElement;
 import io.openems.edge.bridge.modbus.api.element.UnsignedWordElement;
@@ -56,7 +55,7 @@ import io.openems.edge.timedata.api.utils.CalculateEnergyFromPower;
 
 @Designate(ocd = Config.class, factory = true)
 @Component(//
-		name = "Evcs.Heidelberg.Energy", //
+		name = "Evcs.Heidelberg.Energy.Control", //
 		immediate = true, //
 		configurationPolicy = ConfigurationPolicy.REQUIRE //
 )
@@ -65,7 +64,7 @@ import io.openems.edge.timedata.api.utils.CalculateEnergyFromPower;
 		EdgeEventConstants.TOPIC_CYCLE_EXECUTE_WRITE //
 })
 public class EvcsHeidelbergEnergyImpl extends AbstractOpenemsModbusComponent implements EvcsHeidelbergEnergy, ManagedEvcs,
-		ElectricityMeter, ModbusComponent, EventHandler, TimedataProvider, OpenemsComponent {
+		Evcs, ElectricityMeter, ModbusComponent, EventHandler, TimedataProvider, OpenemsComponent {
 
 	private final CalculateEnergyFromPower calculateEnergy = new CalculateEnergyFromPower(this,
 			ACTIVE_PRODUCTION_ENERGY);
@@ -127,9 +126,15 @@ public class EvcsHeidelbergEnergyImpl extends AbstractOpenemsModbusComponent imp
 		}
 		this.installStateListener();
 
-		this._setMinimumPower(EvcsUtils.milliampereToWatt(this.config.minHwCurrent(), 3));
-		this._setMaximumPower(EvcsUtils.milliampereToWatt(this.config.maxHwCurrent(), 3));
+		int min = EvcsUtils.milliampereToWatt(this.config.minHwCurrent(), 3 );
+		int max = EvcsUtils.milliampereToWatt(this.config.maxHwCurrent(), 3 );
 
+		Evcs.addCalculatePowerLimitListeners(this);
+		
+		this._setFixedMinimumHardwarePower( min );
+		this._setFixedMaximumHardwarePower( max );
+		
+		_setPowerPrecision( 1.0 );
 	}
 
 	@Override
@@ -287,6 +292,7 @@ public class EvcsHeidelbergEnergyImpl extends AbstractOpenemsModbusComponent imp
 		}
 		
 		setMaxCurrent(deziAmp);
+		this.getMaxCurrentChannel().setNextValue(deziAmp);
 		
 		setFailsafeCurrent(failSaveCurrent);
 
