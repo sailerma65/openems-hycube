@@ -1,0 +1,12 @@
+= Hycube Components
+
+Implementation of Hycube HY-5K-TL-LV
+
+
+== Compatibility 
+- Sermatec 5K-TL-LV
+
+
+Open Issues:
+* only read only implementation is tested
+

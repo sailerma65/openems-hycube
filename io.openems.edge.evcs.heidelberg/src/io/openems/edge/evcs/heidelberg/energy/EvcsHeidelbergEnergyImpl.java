@@ -1,6 +1,7 @@
 package io.openems.edge.evcs.heidelberg.energy;
 
 import static io.openems.edge.bridge.modbus.api.ElementToChannelConverter.SCALE_FACTOR_2;
+import static io.openems.edge.bridge.modbus.api.ElementToChannelConverter.SCALE_FACTOR_3;
 import static io.openems.edge.meter.api.ElectricityMeter.calculateAverageVoltageFromPhases;
 import static io.openems.edge.meter.api.ElectricityMeter.ChannelId.ACTIVE_PRODUCTION_ENERGY;
 
@@ -18,6 +19,8 @@ import org.osgi.service.event.Event;
 import org.osgi.service.event.EventHandler;
 import org.osgi.service.event.propertytypes.EventTopics;
 import org.osgi.service.metatype.annotations.Designate;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import io.openems.common.exceptions.OpenemsError;
 import io.openems.common.exceptions.OpenemsException;
@@ -27,18 +30,23 @@ import io.openems.edge.bridge.modbus.api.AbstractOpenemsModbusComponent;
 import io.openems.edge.bridge.modbus.api.BridgeModbus;
 import io.openems.edge.bridge.modbus.api.ModbusComponent;
 import io.openems.edge.bridge.modbus.api.ModbusProtocol;
-import io.openems.edge.bridge.modbus.api.element.DummyRegisterElement;
 import io.openems.edge.bridge.modbus.api.element.SignedWordElement;
+import io.openems.edge.bridge.modbus.api.element.UnsignedDoublewordElement;
 import io.openems.edge.bridge.modbus.api.element.UnsignedWordElement;
+import io.openems.edge.bridge.modbus.api.element.WordOrder;
 import io.openems.edge.bridge.modbus.api.task.FC4ReadInputRegistersTask;
 import io.openems.edge.bridge.modbus.api.task.FC6WriteRegisterTask;
 import io.openems.edge.common.component.OpenemsComponent;
 import io.openems.edge.common.event.EdgeEventConstants;
 import io.openems.edge.common.taskmanager.Priority;
 import io.openems.edge.evcs.api.CalculateEnergySession;
+import io.openems.edge.evcs.api.ChargeStateHandler;
 import io.openems.edge.evcs.api.Evcs;
+import io.openems.edge.evcs.api.EvcsPower;
 import io.openems.edge.evcs.api.EvcsUtils;
+import io.openems.edge.evcs.api.ManagedEvcs;
 import io.openems.edge.evcs.api.Status;
+import io.openems.edge.evcs.api.WriteHandler;
 import io.openems.edge.meter.api.ElectricityMeter;
 import io.openems.edge.meter.api.PhaseRotation;
 import io.openems.edge.timedata.api.Timedata;
@@ -47,7 +55,7 @@ import io.openems.edge.timedata.api.utils.CalculateEnergyFromPower;
 
 @Designate(ocd = Config.class, factory = true)
 @Component(//
-		name = "Evcs.Heidelberg.Energy", //
+		name = "Evcs.Heidelberg.Energy.Control", //
 		immediate = true, //
 		configurationPolicy = ConfigurationPolicy.REQUIRE //
 )
@@ -55,8 +63,8 @@ import io.openems.edge.timedata.api.utils.CalculateEnergyFromPower;
 		EdgeEventConstants.TOPIC_CYCLE_AFTER_PROCESS_IMAGE, //
 		EdgeEventConstants.TOPIC_CYCLE_EXECUTE_WRITE //
 })
-public class EvcsHeidelbergEnergyImpl extends AbstractOpenemsModbusComponent implements EvcsHeidelbergEnergy, Evcs,
-		ElectricityMeter, ModbusComponent, EventHandler, TimedataProvider, OpenemsComponent {
+public class EvcsHeidelbergEnergyImpl extends AbstractOpenemsModbusComponent implements EvcsHeidelbergEnergy, ManagedEvcs,
+		Evcs, ElectricityMeter, ModbusComponent, EventHandler, TimedataProvider, OpenemsComponent {
 
 	private final CalculateEnergyFromPower calculateEnergy = new CalculateEnergyFromPower(this,
 			ACTIVE_PRODUCTION_ENERGY);
@@ -64,17 +72,25 @@ public class EvcsHeidelbergEnergyImpl extends AbstractOpenemsModbusComponent imp
 	private Config config;
 	private StatusConverter statusConverter = new StatusConverter(this);
 
+	private final Logger log = LoggerFactory.getLogger(EvcsHeidelbergEnergyImpl.class);
+
 	private static final int WATCHDOG_DISABLE = 0;
 	private static final int STANDBY_DISABLE = 4;
 	// The Heidelberg Evcs has a scale factor of 10 for Current (i.e. 160 = 16A)
-	private static final int FAILSAFE_CURRENT = 160;
-	private static final int MAXIMUM_ALLOWED_CURRENT = 160;
+	private static final int FAILSAFE_CURRENT = 60;
 
 	@Reference(policy = ReferencePolicy.DYNAMIC, policyOption = ReferencePolicyOption.GREEDY, cardinality = ReferenceCardinality.OPTIONAL)
 	private volatile Timedata timedata = null;
 
 	@Reference
 	protected ConfigurationAdmin cm;
+
+	@Reference
+	private EvcsPower evcsPower;
+
+	private final ChargeStateHandler chargeStateHandler = new ChargeStateHandler(this);
+
+	private final WriteHandler writeHandler = new WriteHandler(this);
 
 	@Override
 	@Reference(policy = ReferencePolicy.STATIC, policyOption = ReferencePolicyOption.GREEDY, cardinality = ReferenceCardinality.MANDATORY)
@@ -86,6 +102,7 @@ public class EvcsHeidelbergEnergyImpl extends AbstractOpenemsModbusComponent imp
 		super(//
 				OpenemsComponent.ChannelId.values(), //
 				ModbusComponent.ChannelId.values(), //
+				ManagedEvcs.ChannelId.values(), //
 				ElectricityMeter.ChannelId.values(), //
 				Evcs.ChannelId.values(), //
 				EvcsHeidelbergEnergy.ChannelId.values() //
@@ -109,9 +126,15 @@ public class EvcsHeidelbergEnergyImpl extends AbstractOpenemsModbusComponent imp
 		}
 		this.installStateListener();
 
-		this._setMinimumPower(EvcsUtils.milliampereToWatt(this.config.minHwCurrent(), 3));
-		this._setMaximumPower(EvcsUtils.milliampereToWatt(this.config.maxHwCurrent(), 3));
+		int min = EvcsUtils.milliampereToWatt(this.config.minHwCurrent(), 3 );
+		int max = EvcsUtils.milliampereToWatt(this.config.maxHwCurrent(), 3 );
 
+		Evcs.addCalculatePowerLimitListeners(this);
+		
+		this._setFixedMinimumHardwarePower( min );
+		this._setFixedMaximumHardwarePower( max );
+		
+		_setPowerPrecision( 1.0 );
 	}
 
 	@Override
@@ -131,6 +154,8 @@ public class EvcsHeidelbergEnergyImpl extends AbstractOpenemsModbusComponent imp
 			return;
 		}
 		switch (event.getTopic()) {
+		case EdgeEventConstants.TOPIC_CYCLE_EXECUTE_WRITE ->
+			this.writeHandler.run();
 		case EdgeEventConstants.TOPIC_CYCLE_AFTER_PROCESS_IMAGE -> {
 			this.calculateEnergy.update(this.getActivePower().get());
 			this.calculateEnergySession.update(this.statusConverter.isVehicleConnected());
@@ -174,8 +199,6 @@ public class EvcsHeidelbergEnergyImpl extends AbstractOpenemsModbusComponent imp
 			 * with 0 when Modbus communication is established. Everything below 60 (=6A) is
 			 * interpreted as 0A. 160 (=16A) is the maximum.
 			 */
-			this.setFailsafeCurrent(FAILSAFE_CURRENT);
-			this.setMaxCurrent(MAXIMUM_ALLOWED_CURRENT);
 		} catch (OpenemsError.OpenemsNamedException e) {
 			FunctionUtils.doNothing();
 		}
@@ -193,12 +216,16 @@ public class EvcsHeidelbergEnergyImpl extends AbstractOpenemsModbusComponent imp
 						m(phaseRotated.channelCurrentL1(), new UnsignedWordElement(offset + 6), SCALE_FACTOR_2), //
 						m(phaseRotated.channelCurrentL2(), new UnsignedWordElement(offset + 7), SCALE_FACTOR_2), //
 						m(phaseRotated.channelCurrentL3(), new UnsignedWordElement(offset + 8), SCALE_FACTOR_2), //
-						new DummyRegisterElement(offset + 9), //
-						m(phaseRotated.channelVoltageL1(), new UnsignedWordElement(offset + 10)), //
-						m(phaseRotated.channelVoltageL2(), new UnsignedWordElement(offset + 11)), //
-						m(phaseRotated.channelVoltageL3(), new UnsignedWordElement(offset + 12)), //
-						new DummyRegisterElement(offset + 13), //
-						m(ElectricityMeter.ChannelId.ACTIVE_POWER, new UnsignedWordElement(offset + 14))), //
+						m(EvcsHeidelbergEnergy.ChannelId.TEMPERATURE_PCB, new UnsignedWordElement(offset + 9)), //
+						m(phaseRotated.channelVoltageL1(), new UnsignedWordElement(offset + 10), SCALE_FACTOR_3), //
+						m(phaseRotated.channelVoltageL2(), new UnsignedWordElement(offset + 11), SCALE_FACTOR_3), //
+						m(phaseRotated.channelVoltageL3(), new UnsignedWordElement(offset + 12), SCALE_FACTOR_3), //
+						m(EvcsHeidelbergEnergy.ChannelId.EXTERNAL_LOCK_STATE, new UnsignedWordElement(offset + 13)), //
+						m(ElectricityMeter.ChannelId.ACTIVE_POWER, new UnsignedWordElement(offset + 14)),
+						m(ElectricityMeter.ChannelId.ACTIVE_CONSUMPTION_ENERGY, new UnsignedDoublewordElement(offset + 15).wordOrder(WordOrder.LSWMSW)),
+						m(Evcs.ChannelId.ENERGY_SESSION, new UnsignedDoublewordElement(offset + 17).wordOrder(WordOrder.LSWMSW))
+						
+						), //
 				new FC6WriteRegisterTask(offset + 257, //
 						m(EvcsHeidelbergEnergy.ChannelId.WATCHDOG_TIME, new SignedWordElement(offset + 257))), //
 				new FC6WriteRegisterTask(offset + 258, //
@@ -222,6 +249,82 @@ public class EvcsHeidelbergEnergyImpl extends AbstractOpenemsModbusComponent imp
 	@Override
 	public Timedata getTimedata() {
 		return this.timedata;
+	}
+
+	@Override
+	public EvcsPower getEvcsPower() {
+		return this.evcsPower;
+	}
+
+	@Override
+	public int getConfiguredMinimumHardwarePower() {
+		return EvcsUtils.milliampereToWatt(this.config.minHwCurrent(), 3);
+		
+	}
+
+	@Override
+	public int getConfiguredMaximumHardwarePower() {
+		return EvcsUtils.milliampereToWatt(this.config.maxHwCurrent(), 3);
+	}
+
+	@Override
+	public boolean getConfiguredDebugMode() {
+		return this.config.debugMode();
+	}
+
+	@Override
+	public boolean applyChargePowerLimit(int power) throws Exception {
+		
+		double current = power / 230.0 / 3.0;
+		
+		int deziAmp = ( int ) ( current * 10 );
+		
+		int failSaveCurrent = FAILSAFE_CURRENT;
+		
+		if( deziAmp < 50 )
+		{
+			deziAmp = 0;
+			failSaveCurrent = 0;
+		}
+		else if( deziAmp < 60 )
+		{
+			deziAmp = 60;
+		}
+		
+		setMaxCurrent(deziAmp);
+		this.getMaxCurrentChannel().setNextValue(deziAmp);
+		
+		setFailsafeCurrent(failSaveCurrent);
+
+		return true;
+	}
+
+	@Override
+	public boolean pauseChargeProcess() throws Exception {
+		applyChargePowerLimit( 0 );
+		return true;
+	}
+
+	@Override
+	public boolean applyDisplayText(String text) throws OpenemsException {
+		return false;
+	}
+
+	@Override
+	public int getMinimumTimeTillChargingLimitTaken() {
+		return 30;
+	}
+
+	@Override
+	public ChargeStateHandler getChargeStateHandler() {
+		return this.chargeStateHandler;
+	}
+
+	@Override
+	public void logDebug(String message) {
+		if (this.config.debugMode()) {
+			this.logInfo(this.log, message);
+		}
 	}
 
 }

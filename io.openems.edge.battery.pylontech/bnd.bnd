@@ -10,6 +10,10 @@ Bundle-Version: 1.0.0.${tstamp}
 	io.openems.edge.bridge.modbus,\
 	io.openems.edge.common,\
 	io.openems.j2mod,\
-
+	com.fazecast.jSerialComm
 -testpath: \
 	${testpath}
+Export-Package: \
+	io.openems.edge.battery.pylontech.us2000C,\
+	io.openems.edge.battery.pylontech.us2000C.com,\
+	io.openems.edge.battery.pylontech.us2000C.statemachine

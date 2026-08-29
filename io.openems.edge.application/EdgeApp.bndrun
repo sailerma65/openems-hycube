@@ -225,7 +225,7 @@
 	bnd.identity;id='io.openems.edge.timeofusetariff.tibber',\
 	bnd.identity;id='io.openems.edge.victron',\
 	bnd.identity;id='io.openems.edge.weather.openmeteo',\
-
+	bnd.identity;id='io.openems.edge.hycube'
 -runbundles: \
 	bcpkix;version='[1.85.0,1.85.1)',\
 	bcprov;version='[1.85.0,1.85.1)',\
@@ -506,4 +506,5 @@
 	org.owasp.encoder;version='[1.4.0,1.4.1)',\
 	reactive-streams;version='[1.0.4,1.0.5)',\
 	rrd4j;version='[3.10.0,3.10.1)',\
-	stax2-api;version='[4.3.0,4.3.1)'
+	stax2-api;version='[4.3.0,4.3.1)',\
+	io.openems.edge.hycube;version=snapshot

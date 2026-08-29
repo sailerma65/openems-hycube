@@ -3,6 +3,7 @@ package io.openems.edge.evcs.heidelberg.energy;
 import io.openems.common.channel.AccessMode;
 import io.openems.common.channel.Level;
 import io.openems.common.channel.PersistencePriority;
+import io.openems.common.channel.Unit;
 import io.openems.common.exceptions.OpenemsError;
 import io.openems.common.types.OpenemsType;
 import io.openems.edge.common.channel.Doc;
@@ -10,9 +11,10 @@ import io.openems.edge.common.channel.StateChannel;
 import io.openems.edge.common.channel.WriteChannel;
 import io.openems.edge.common.component.OpenemsComponent;
 import io.openems.edge.evcs.api.Evcs;
+import io.openems.edge.evcs.api.ManagedEvcs;
 import io.openems.edge.meter.api.ElectricityMeter;
 
-public interface EvcsHeidelbergEnergy extends Evcs, ElectricityMeter, OpenemsComponent {
+public interface EvcsHeidelbergEnergy extends ManagedEvcs, ElectricityMeter, OpenemsComponent {
 
 	public enum ChannelId implements io.openems.edge.common.channel.ChannelId {
 
@@ -24,14 +26,18 @@ public interface EvcsHeidelbergEnergy extends Evcs, ElectricityMeter, OpenemsCom
 		 * See Modbus specification for details on the Mode 3 state.
 		 */
 		HEIDELBERG_STATE(Doc.of(OpenemsType.INTEGER)), //
+		EXTERNAL_LOCK_STATE(Doc.of(OpenemsType.INTEGER)), //
+		
 		WATCHDOG_TIME(Doc.of(OpenemsType.INTEGER) //
 				.accessMode(AccessMode.READ_WRITE)), //
 		STANDBY(Doc.of(OpenemsType.INTEGER) //
 				.accessMode(AccessMode.READ_WRITE)), //
 		MAX_CURRENT(Doc.of(OpenemsType.INTEGER) //
-				.accessMode(AccessMode.READ_WRITE)), //
+				.accessMode(AccessMode.READ_WRITE).unit(Unit.DEZIAMPERE)), //
 		FAILSAFE_CURRENT(Doc.of(OpenemsType.INTEGER) //
-				.accessMode(AccessMode.READ_WRITE)//
+				.accessMode(AccessMode.READ_WRITE).unit(Unit.DEZIAMPERE)),//
+		TEMPERATURE_PCB(Doc.of(OpenemsType.INTEGER) //
+						.unit(Unit.DEZIDEGREE_CELSIUS) //
 		);
 
 		private final Doc doc;
