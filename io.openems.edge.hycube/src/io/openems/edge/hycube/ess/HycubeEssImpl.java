@@ -302,6 +302,13 @@ public class HycubeEssImpl extends AbstractOpenemsModbusComponent
 			solarSum.setNextValue( sum );
 		} );
 
+		solar1.onChange( (oldValue, solar1Power) -> 
+		{
+			int sum = solar2.getNextValue().get() + solar1Power.get();
+			
+			solarSum.setNextValue( sum );
+		} );
+
 		if( battery instanceof PylontechUS2000CBattery pyBattery )
 		{
 			setMaxChargingVoltage( pyBattery.getMaxChargeVoltage() );
