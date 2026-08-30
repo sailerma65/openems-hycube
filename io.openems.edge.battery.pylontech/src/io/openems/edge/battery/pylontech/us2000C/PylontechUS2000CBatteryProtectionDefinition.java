@@ -7,17 +7,27 @@ import io.openems.edge.common.linecharacteristic.PolyLine;
 
 public class PylontechUS2000CBatteryProtectionDefinition implements BatteryProtectionDefinition {
 
+	private int initBmsMaxEverCharge;
+	private int initBmsMaxEverDischarge;
+	private double maxIncreasePerSecond;
+	
+	public PylontechUS2000CBatteryProtectionDefinition( int _initBmsMaxEverCharge, int _initBmsMaxEverDischarge, double _maxIncreasePerSecond )
+	{
+		initBmsMaxEverCharge = _initBmsMaxEverCharge;
+		initBmsMaxEverDischarge = _initBmsMaxEverDischarge;
+		maxIncreasePerSecond = _maxIncreasePerSecond;
+	}
 	/*
 	 * Most values not defined. Those that are defined come from Pylontech engineer.
 	 */
 	@Override
 	public int getInitialBmsMaxEverChargeCurrent() {
-		return 148; // [A]
+		return initBmsMaxEverCharge; // [A]
 	}
 
 	@Override
 	public int getInitialBmsMaxEverDischargeCurrent() {
-		return 148; // [A]
+		return initBmsMaxEverDischarge; // [A]
 	}
 
 	@Override
@@ -55,7 +65,7 @@ public class PylontechUS2000CBatteryProtectionDefinition implements BatteryProte
 		// [A] per second
 		// This is not provided by Pylontech. May be unnecessary to
 		// provide this value as BMS takes care.
-		return 20.0;
+		return maxIncreasePerSecond;
 	}
 
 	@Override

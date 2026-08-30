@@ -359,16 +359,23 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 		
 		m_worker.activate(config.id());
 		
+		m_numberOfDevices = this.config.devicesInParallel();
+		
+		int _initBmsMaxEverCharge = m_numberOfDevices * 25;
+		int _initBmsMaxEverDischarge = m_numberOfDevices * 25;
+		int _maxIncreasePerSecond = m_numberOfDevices * 5;
+		
+		// TODO Protection-Werte abhängig von devicesInParallel
+		// maxEverCharge, maxEverDischarge, increasePerSecond
 		this.batteryProtection = BatteryProtection.create(this) //
-				.applyBatteryProtectionDefinition(new PylontechUS2000CBatteryProtectionDefinition(),
+				.applyBatteryProtectionDefinition(new PylontechUS2000CBatteryProtectionDefinition( 
+						_initBmsMaxEverCharge, _initBmsMaxEverDischarge, _maxIncreasePerSecond ),
 						this.componentManager) //
 				.build();
 		
 		Channel<Integer> numberOfDevicesChannel = this
 				.channel(PylontechUS2000CBattery.ChannelId.SYSTEM_NUMBER_OF_PARALLEL_DEVICES);
 
-		m_numberOfDevices = this.config.devicesInParallel();
-		
 		numberOfDevicesChannel.setNextValue( m_numberOfDevices );
 	}
 
@@ -635,8 +642,8 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 			
 			for( int i = 0; i < m_numberOfDevices; i++ )
 			{
-				chargeCurrent += m_managementInfos[ i ].chargeCurrentLimit();
-				dischargeCurrent += m_managementInfos[ i ].dischargeCurrentLimit();
+				chargeCurrent += m_managementInfos[ i ].chargeCurrentLimit(); // positive value
+				dischargeCurrent -= m_managementInfos[ i ].dischargeCurrentLimit(); // negative value
 				
 				chargeVoltage = Double.min( m_managementInfos[ i ].chargeVoltageLimit(), chargeVoltage );
 				dischargeVoltage = Double.max( m_managementInfos[ i ].dischargeVoltageLimit(), dischargeVoltage );
@@ -665,12 +672,8 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 			channel( BatteryProtection.ChannelId.BP_CHARGE_BMS ).setNextValue( ( int )chargeCurrent );
 			channel( BatteryProtection.ChannelId.BP_DISCHARGE_BMS ).setNextValue( ( int )dischargeCurrent );
 
-			channel( BatteryProtection.ChannelId.BP_CHARGE_MAX_VOLTAGE ).setNextValue( ( int )chargeVoltage );
-			channel( BatteryProtection.ChannelId.BP_DISCHARGE_MIN_VOLTAGE ).setNextValue( ( int )dischargeVoltage );
-			
-			// following values are set by BatteryProtection
-			channel( Battery.ChannelId.CHARGE_MAX_VOLTAGE ).setNextValue( ( int )chargeVoltage );
-			channel( Battery.ChannelId.CHARGE_MAX_CURRENT ).setNextValue( ( int )chargeCurrent );
+			// channels Battery.ChannelId.CHARGE_MAX_VOLTAGE and Battery.ChannelId.CHARGE_MAX_CURRENT
+			// are set by BatteryProtection
 
 			channel( Battery.ChannelId.DISCHARGE_MIN_VOLTAGE ).setNextValue( ( int )dischargeVoltage );
 			channel( Battery.ChannelId.DISCHARGE_MAX_CURRENT ).setNextValue( ( int )dischargeCurrent ); 

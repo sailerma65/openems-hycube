@@ -495,12 +495,12 @@ public class HycubeEssImpl extends AbstractOpenemsModbusComponent
 		if( this.battery instanceof PylontechUS2000CBattery pylonBattery )
 		{
 			this.batteryMaxChargePower = pylonBattery.getPylontechBatteryVoltage() * pylonBattery.getMaxChargeCurrent() / 100;
-			this.batteryMaxDischargePower = -pylonBattery.getPylontechBatteryVoltage() * pylonBattery.getMaxDischargeCurrent() / 100;
+			this.batteryMaxDischargePower = pylonBattery.getPylontechBatteryVoltage() * pylonBattery.getMaxDischargeCurrent() / 100;
 		}
 		else
 		{
 			this.batteryMaxChargePower = this.battery.getVoltage().orElse(0) * this.battery.getChargeMaxCurrent().orElse(0);
-			this.batteryMaxDischargePower = -this.battery.getVoltage().orElse(0) * this.battery.getDischargeMaxCurrent().orElse(0);
+			this.batteryMaxDischargePower = this.battery.getVoltage().orElse(0) * this.battery.getDischargeMaxCurrent().orElse(0);
 		}
 
 		return true;

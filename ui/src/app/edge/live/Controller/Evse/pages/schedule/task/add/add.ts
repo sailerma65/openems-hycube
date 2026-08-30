@@ -11,6 +11,7 @@ import { EvseManualPayload } from "../../js-calender-utils";
 @Component({
     templateUrl: "./add.html",
     changeDetection: ChangeDetectionStrategy.Eager,
+	selector: 'evse-add-task-component',
     imports: [AddTaskComponent, CommonUiModule],
 })
 export class EvseAddTaskComponent extends JsCalendarAddTaskComponent {
