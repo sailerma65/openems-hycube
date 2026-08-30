@@ -11,7 +11,7 @@ import { HistoryDataErrorModule } from "src/app/shared/components/history-data-e
 import { SingleChartComponent } from "../../../../Channelthreshold/history/chart/singlechart.component";
 
 @Component({
-    selector: "oe-controller-channelthreshold-overview",
+    selector: "oe-controller-channelsinglethreshold-overview",
     templateUrl: "./new-navigation.html",
     standalone: true,
     imports: [

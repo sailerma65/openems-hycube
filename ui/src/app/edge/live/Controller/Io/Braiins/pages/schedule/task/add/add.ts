@@ -21,6 +21,7 @@ type ModeChangeEvent = CustomEvent<{
 @Component({
     templateUrl: "./add.html",
     changeDetection: ChangeDetectionStrategy.Eager,
+	selector: 'controller-braiins-add-task-component',
     imports: [AddTaskComponent, CommonUiModule],
 })
 export class ControllerBraiinsAddTaskComponent extends JsCalendarAddTaskComponent {
