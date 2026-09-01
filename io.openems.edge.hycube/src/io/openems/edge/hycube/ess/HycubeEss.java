@@ -33,16 +33,14 @@ import io.openems.edge.hycube.enums.EnableDisable;
 import io.openems.edge.hycube.ess.statemachine.StateMachine.State;
 
 /**
- * This interface defines all channels for the Victron Energy Storage System
- * connected via Modbus to GX. It supports both single-phase and three-phase
- * configurations.
+ * This interface defines all channels for the Hycube Energy Storage System
+ * connected via Modbus. It supports single-phase configurations.
  *
  * <p>
- * Modbus registers are based on Victron´s Modbus-TCP documentation.
+ * Modbus registers: see https://github.com/xX-Overengineered-Xx/Hycube-PV-Research-Hub/blob/main/Sermatec%20SMT-5K-TL-LV/Modbus-Register%20(HY-5K-TL-LV).xlsx
+ * 
+ * More info: @see https://github.com/xX-Overengineered-Xx/Hycube-PV-Research-Hub
  *
- * @see <a href=
- *      "https://github.com/victronenergy/dbus_modbustcp/blob/master/CCGX-Modbus-TCP-register-list.xlsx">GX
- *      Modbus-TCP list</a>
  */
 public interface HycubeEss extends ManagedSymmetricEss, OpenemsComponent, EventHandler {
 

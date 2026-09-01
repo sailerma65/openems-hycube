@@ -40,12 +40,10 @@ import io.openems.edge.meter.api.SinglePhaseMeter;
 import io.openems.edge.pvinverter.api.ManagedSymmetricPvInverter;
 
 /**
- * Implementation of the Hycube Battery Inverter component.
+ * Implementation of the Hycube PV Inverter component.
  *
  * <p>
- * This component communicates with Hycube systems  using
- * Modbus-TCP (Unit-ID 100 for system data). It reads system-level power flows,
- * battery status, and ESS control parameters.
+ * This component communicates with Hycube ess system
  *
  * <p>
  * The inverter is controlled indirectly through the ESS component
