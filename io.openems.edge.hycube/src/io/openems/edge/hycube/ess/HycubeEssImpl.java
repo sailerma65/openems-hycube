@@ -661,9 +661,7 @@ public class HycubeEssImpl extends AbstractOpenemsModbusComponent
 	 * Applies power setpoints for asymmetric ESS operation.
 	 *
 	 * <p>
-	 * Note: Victron uses negative values for discharge, OpenEMS uses negative for
-	 * charge. Values are inverted when writing to hardware.
-	 *
+	 * Note: 	 *
 	 * <p>
 	 * AC-Out consumption is subtracted during charging to ensure accurate battery
 	 * power control.
@@ -683,18 +681,12 @@ public class HycubeEssImpl extends AbstractOpenemsModbusComponent
 
 		this.logDebug(this.log, "Setting max. apparent power to batteryInverter-Channel");
 
-		// Victron: Negative values for Discharge
+		// Sermatec: Negative values for Charge
 		// OpenEMS: Negative values for Charge
-
-		// if we are in symmetric mode we have to device the wanted power by 3
-		// In single phase
 
 		this.logDebug(this.log,
 				"OpenEMS Apply Power L1: " + activePowerTargetL1 + "|L2: " + activePowerTargetL2 + "|L3: "
 						+ activePowerTargetL3 );
-		// at this point we add AC Out power values
-		// i.e. -300W (charge battery)
-		// 100W AC Out we have to draw 300W from grid
 
 		if (activePowerTargetL1 == 0 && activePowerTargetL2 == 0 && activePowerTargetL3 == 0) {
 			this.logDebug(this.log, "\n Disabling Charging / Discharging");
@@ -751,9 +743,6 @@ public class HycubeEssImpl extends AbstractOpenemsModbusComponent
 	 * For three-phase systems, power is distributed equally across all phases. For
 	 * single-phase systems, power is applied only to the configured phase.
 	 *
-	 * <p>
-	 * Note: Victron uses negative values for discharge, OpenEMS uses negative for
-	 * charge. Values are inverted when writing to hardware.
 	 */
 	@Override
 	public void applyPower(int activePowerTarget, int reactivePower) throws OpenemsNamedException {
@@ -1268,6 +1257,8 @@ public class HycubeEssImpl extends AbstractOpenemsModbusComponent
 		recentSetMaxChargeVoltageValue = null;
 		recentSetMinDischargeVoltageValue = null;
 		
+		// switches on the CBi RAU (Remote actuator unit with lockout)
+
 		digOutBoard.digitalOutputChannels()[ config.io_battery_pin() ].setNextValue( Boolean.TRUE );
 	}
 	

@@ -14,8 +14,10 @@ import io.openems.edge.hycube.ess.statemachine.StateMachine.State;
  * Handles the GO_RUNNING state - transition from stopped/undefined to running.
  *
  * <p>
- * Victron inverters are typically "always running" when connected via Modbus,
- * so this handler primarily sets the grid mode and transitions to RUNNING.
+ * waits until all needed modbus register values are available,
+ * checks version information and checks if presets are correctly set.
+ * If yes -> GO_RUNNING
+ * If no -> go to state INITIALIZING -> set preset values
  */
 
 public class CheckingHandler extends StateHandler<State, Context> {

@@ -17,12 +17,6 @@ public class ErrorHandler extends StateHandler<State, Context> {
 	protected void onEntry(Context context) throws OpenemsNamedException {
 		this.entryAt = Instant.now();
 
-		// TODO Clear Failures
-		// this.setClearFailureCommand(context);
-		// Try to stop systems
-		// final VictronBatteryInverterImpl inverter = context.getParent();
-		// inverter.softStart(false);
-		// inverter.setStopInverter();
 	}
 
 	@Override
@@ -35,11 +29,4 @@ public class ErrorHandler extends StateHandler<State, Context> {
 		// Wait
 		return State.ERROR;
 	}
-
-	// private void setClearFailureCommand(Context context) throws
-	// OpenemsNamedException {
-	// BooleanWriteChannel setClearFailureCmd =
-	// context.getParent().channel(Victron.ChannelId.CLEAR_FAILURE_COMMAND);
-	// setClearFailureCmd.setNextWriteValue(true); // 1: true, other: illegal
-	// }
 }
