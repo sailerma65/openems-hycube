@@ -9,6 +9,8 @@ public class StateMachine extends AbstractStateMachine<StateMachine.State, Conte
 	public enum State implements io.openems.edge.common.statemachine.State<State>, OptionsEnum {
 		UNDEFINED(-1), //
 
+		INIT_COMM(1),//
+		GO_RUNNING(10),//
 		RUNNING(11), //
 
 		STOPPED(21), //
@@ -51,6 +53,8 @@ public class StateMachine extends AbstractStateMachine<StateMachine.State, Conte
 	public StateHandler<State, Context> getStateHandler(State state) {
 		return switch (state) {
 		case UNDEFINED -> new UndefinedHandler();
+		case INIT_COMM -> new StartCommHandler();
+		case GO_RUNNING -> new GoRunningHandler();
 		case RUNNING -> new RunningHandler();
 		case STOPPED -> new StoppedHandler();
 		case ERROR -> new ErrorHandler();

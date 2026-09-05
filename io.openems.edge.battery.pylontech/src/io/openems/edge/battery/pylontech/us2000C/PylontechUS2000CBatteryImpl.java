@@ -7,6 +7,7 @@ import static org.osgi.service.component.annotations.ConfigurationPolicy.REQUIRE
 import java.io.IOException;
 import java.util.LinkedHashMap;
 import java.util.Map.Entry;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.osgi.service.cm.ConfigurationAdmin;
@@ -15,6 +16,8 @@ import org.osgi.service.component.annotations.Activate;
 import org.osgi.service.component.annotations.Component;
 import org.osgi.service.component.annotations.Deactivate;
 import org.osgi.service.component.annotations.Reference;
+import org.osgi.service.component.annotations.ReferenceCardinality;
+import org.osgi.service.component.annotations.ReferencePolicyOption;
 import org.osgi.service.event.Event;
 import org.osgi.service.event.EventHandler;
 import org.osgi.service.event.propertytypes.EventTopics;
@@ -24,14 +27,16 @@ import org.slf4j.LoggerFactory;
 
 import io.openems.common.exceptions.OpenemsError.OpenemsNamedException;
 import io.openems.common.exceptions.OpenemsException;
+import io.openems.common.referencetarget.GenerateTargetsFromReferences;
 import io.openems.common.worker.AbstractWorker;
 import io.openems.edge.battery.api.Battery;
 import io.openems.edge.battery.protection.BatteryProtection;
-import io.openems.edge.battery.pylontech.us2000C.com.Pylontech;
-import io.openems.edge.battery.pylontech.us2000C.com.Pylontech.CMD_DESCRIPTORS;
-import io.openems.edge.battery.pylontech.us2000C.com.Pylontech.Frame;
-import io.openems.edge.battery.pylontech.us2000C.com.Pylontech.FrameTimeoutException;
-import io.openems.edge.battery.pylontech.us2000C.com.Pylontech.UnexpectedStartOfFrame;
+import io.openems.edge.battery.pylontech.us2000C.com.PylontechSerial;
+import io.openems.edge.battery.pylontech.us2000C.com.PylontechSerial.CMD_DESCRIPTORS;
+import io.openems.edge.battery.pylontech.us2000C.com.PylontechSerial.Frame;
+import io.openems.edge.battery.pylontech.us2000C.com.PylontechSerial.FrameTimeoutException;
+import io.openems.edge.battery.pylontech.us2000C.com.PylontechSerial.UnexpectedStartOfFrame;
+import io.openems.edge.battery.pylontech.us2000C.com.SerialReadWrite;
 import io.openems.edge.battery.pylontech.us2000C.statemachine.Context;
 import io.openems.edge.battery.pylontech.us2000C.statemachine.StateMachine;
 import io.openems.edge.battery.pylontech.us2000C.statemachine.StateMachine.State;
@@ -40,7 +45,6 @@ import io.openems.edge.common.component.AbstractOpenemsComponent;
 import io.openems.edge.common.component.ComponentManager;
 import io.openems.edge.common.component.OpenemsComponent;
 import io.openems.edge.common.startstop.StartStop;
-import io.openems.edge.common.startstop.StartStopConfig;
 import io.openems.edge.common.startstop.StartStoppable;
 
 @Designate(ocd = Config.class, factory = true)
@@ -53,7 +57,7 @@ import io.openems.edge.common.startstop.StartStoppable;
 				OpenemsComponent.class,       // Basisschnittstelle
 				EventHandler.class
 		})
-
+@GenerateTargetsFromReferences("serialConnection")
 @EventTopics({ //
 		TOPIC_CYCLE_BEFORE_PROCESS_IMAGE, //
 		TOPIC_CYCLE_AFTER_PROCESS_IMAGE })
@@ -81,15 +85,15 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 
 	private final Logger log = LoggerFactory.getLogger(PylontechUS2000CBatteryImpl.class);
 
+	@Reference( cardinality = ReferenceCardinality.MANDATORY, policyOption = ReferencePolicyOption.GREEDY, 
+			target = "(&(id=${config.serialInterfaceId})(enabled=true))" )
+	protected SerialReadWrite serialConnection;
+	
 	@Reference
 	protected ConfigurationAdmin cm;
 
 	@Reference
 	protected ComponentManager componentManager;
-
-	/**
-	 * Manages the {@link State}s of the StateMachine.
-	 */
 	private final StateMachine stateMachine = new StateMachine(State.UNDEFINED);
 
 	private final AtomicReference<StartStop> startStopTarget = new AtomicReference<>(StartStop.UNDEFINED);
@@ -99,17 +103,22 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 
 	private PylontechWorker m_worker = new PylontechWorker();
 	
-	private Pylontech m_pylontechAdapter;
-	
 	private String[] m_serialNumbers = new String[16];
-	private Pylontech.ManufacturerInfo[] m_manufacturerInfos = new Pylontech.ManufacturerInfo[16];
-	private Pylontech.AlarmInfo[] m_alarmInfos = new Pylontech.AlarmInfo[16];
-	private Pylontech.ManagementInfo[] m_managementInfos = new Pylontech.ManagementInfo[16];
-	private Pylontech.ModuleValues[] m_moduleValues = new Pylontech.ModuleValues[16];
+	private PylontechSerial.ManufacturerInfo[] m_manufacturerInfos = new PylontechSerial.ManufacturerInfo[16];
+	private PylontechSerial.AlarmInfo[] m_alarmInfos = new PylontechSerial.AlarmInfo[16];
+	private PylontechSerial.ManagementInfo[] m_managementInfos = new PylontechSerial.ManagementInfo[16];
+	private PylontechSerial.ModuleValues[] m_moduleValues = new PylontechSerial.ModuleValues[16];
 	
 	private static final int PY_START_ADDRESS = 2;
 	
-	private enum PYLONTECH_POLL_MODE{
+	private enum PYLONTECH_COMM_STATE{
+		INACTIVE,
+		INITIALIZING,
+		RUNNING
+	}
+	
+	private enum PYLONTECH_POLL_CYCLE{
+		INACTIVE(null),
 		SCAN_SERIAL_NUMBER( CMD_DESCRIPTORS.CMD_GET_SERIAL_NUMBER ),
 		SCAN_MANUFACTURER_INFO( CMD_DESCRIPTORS.CMD_GET_MANUFACTURER_INFO ),
 		RUN_ANALOG_VALUES( CMD_DESCRIPTORS.CMD_GET_ANALOG_VALUE ),
@@ -118,13 +127,13 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 		
 		CMD_DESCRIPTORS descriptor;
 		
-		PYLONTECH_POLL_MODE( CMD_DESCRIPTORS descriptor )
+		PYLONTECH_POLL_CYCLE( CMD_DESCRIPTORS descriptor )
 		{
 			this.descriptor = descriptor;
 		}
 	}
 	
-	private enum PYLONTECH_COMM_MODE{
+	private enum PYLONTECH_COMM_DIR{
 		REQUEST,
 		RESPONSE
 	}
@@ -177,168 +186,275 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 	
 	private class PylontechWorker extends AbstractWorker{
 		
-		private Pylontech m_pylontechAdapter;
+		private PylontechSerial wrkPylontechAdapter;
 
-		private PYLONTECH_POLL_MODE m_pylontechState = PYLONTECH_POLL_MODE.SCAN_SERIAL_NUMBER;
+		// sync
+		private PYLONTECH_POLL_CYCLE wrkPylontechPollCycle = PYLONTECH_POLL_CYCLE.SCAN_SERIAL_NUMBER;
 		
-		private int m_pollAddress;
+		// single thr.
+		private int wrkPollAddress;
 		
-		private int m_pollMax;
+		// read
+		private int wrkPollMax;
 		
-		private PYLONTECH_COMM_MODE m_commMode;
-		
-		private static final int PY_VALUE_CYCLES = 20;
+		// single thr.
+		private PYLONTECH_COMM_DIR wrkCommDirection;
 		
 		private static final int PY_MAX_POLL_ERRORS = 4;
 
-		private int m_valueCycles;
-		
-		private int m_pollErrorCount = 0;
+		// single thr.
+		private int wrkPollErrorCount = 0;
 
-		private volatile boolean m_communicationError;
+		private PYLONTECH_COMM_STATE wrkCommState = PYLONTECH_COMM_STATE.INACTIVE;
 		
-		private void setSerialInterface( String i_interface )
-		{
-			m_pylontechAdapter = new Pylontech(i_interface);
-		}
+		
+		private boolean wrkActivated = false;
 
+		private volatile boolean wrkCommunicationError;
+		
 		private void setParallelDevices( int i_devices )
 		{
-			m_pollMax = PY_START_ADDRESS + i_devices - 1;
+			wrkPollMax = PY_START_ADDRESS + i_devices - 1;
+		}
+		
+		private void setSerialInterface( SerialReadWrite connection )
+		{
+			wrkPylontechAdapter = new PylontechSerial(connection);
+		}
+		
+		@Override
+		public void activate(String name, boolean initiallyTriggerNextRun) {
+			
+			super.activate(name, initiallyTriggerNextRun);
+			
+			synchronized( this )
+			{
+			  wrkActivated = true;
+			}
+		}
+		
+		
+
+		@Override
+		public void deactivate() {
+			synchronized( this )
+			{
+			  wrkActivated = false;
+			  wrkCommState = PYLONTECH_COMM_STATE.INACTIVE;
+			}
+			super.deactivate();
+		}
+
+		public synchronized boolean isActivated()
+		{
+			return wrkActivated;
+		}
+		
+		public synchronized boolean isRunning()
+		{
+			return isActivated() && wrkCommState == PYLONTECH_COMM_STATE.RUNNING;
+		}
+		
+		public synchronized void startCommunication()
+		{
+			wrkPylontechAdapter.startWork();
+			
+			wrkCommunicationError = false;
+			
+			wrkCommState = PYLONTECH_COMM_STATE.INITIALIZING;
+			
+			wrkCommDirection = PYLONTECH_COMM_DIR.REQUEST;
+			
+			wrkPollAddress = PY_START_ADDRESS;
+			
+			startNextCycle();
+		}
+		
+		public synchronized void startNextCycle()
+		{
+			if( wrkPylontechPollCycle == PYLONTECH_POLL_CYCLE.INACTIVE  && wrkCommState != PYLONTECH_COMM_STATE.INACTIVE )
+			{
+				if( wrkCommState == PYLONTECH_COMM_STATE.INITIALIZING )
+				{
+					wrkPylontechPollCycle = PYLONTECH_POLL_CYCLE.SCAN_SERIAL_NUMBER;
+				}
+				else
+				{
+					wrkPylontechPollCycle = PYLONTECH_POLL_CYCLE.RUN_ANALOG_VALUES;
+				}
+			}
 		}
 		
 		@Override
 		protected void forever() throws Throwable {
-			if( m_commMode == PYLONTECH_COMM_MODE.REQUEST )
+			if( !serialConnection.isStarted() )
+				return;
+			
+			PYLONTECH_POLL_CYCLE currentPollCycle;
+			
+			synchronized( this )
 			{
-				m_pylontechAdapter.clearReceiveBuffer();
-				m_pylontechAdapter.sendCmdWithAddressInfo( m_pollAddress, m_pylontechState.descriptor );
-				
-				m_commMode = PYLONTECH_COMM_MODE.RESPONSE;
+				if( wrkPylontechPollCycle == PYLONTECH_POLL_CYCLE.INACTIVE )
+				{
+					return;
+				}
+
+			    currentPollCycle = wrkPylontechPollCycle;
+			}
+			
+			PYLONTECH_POLL_CYCLE nextPollCycle = null;
+			
+			if( wrkCommDirection == PYLONTECH_COMM_DIR.REQUEST )
+			{
+				wrkPylontechAdapter.clearReceiveBuffer();
+				wrkPylontechAdapter.sendCmdWithAddressInfo( wrkPollAddress, currentPollCycle.descriptor );
+				wrkCommDirection = PYLONTECH_COMM_DIR.RESPONSE;
 			}
 			else
 			{
 				try
 				{
-					Frame receivedFrame = m_pylontechAdapter.receiveOrWait();
+					Frame receivedFrame = wrkPylontechAdapter.receiveOrWait();
 					
 					if( receivedFrame != null )
 					{
-						FrameKey key = new FrameKey( m_pollAddress, m_pylontechState.descriptor );
-						FrameData data = new FrameData(m_pollAddress, m_pylontechState.descriptor, receivedFrame );
+						FrameKey key = new FrameKey( wrkPollAddress, currentPollCycle.descriptor );
+						FrameData data = new FrameData(wrkPollAddress, currentPollCycle.descriptor, receivedFrame );
 						
 						synchronized (m_receivedFrames ) {
 							m_receivedFrames.put(key, data);
 						}
 						
-						switch( m_pylontechState )
+						switch( currentPollCycle )
 						{
 						case SCAN_SERIAL_NUMBER:
-							m_pylontechState = PYLONTECH_POLL_MODE.SCAN_MANUFACTURER_INFO;
+							 nextPollCycle = PYLONTECH_POLL_CYCLE.SCAN_MANUFACTURER_INFO;
 							break;
 						case SCAN_MANUFACTURER_INFO:
-					        if( m_pollAddress < m_pollMax )
+					        if( wrkPollAddress < wrkPollMax )
 					        {
-					        	m_pollAddress++;
-					        	m_pylontechState = PYLONTECH_POLL_MODE.SCAN_SERIAL_NUMBER;
+					        	wrkPollAddress++;
+					        	nextPollCycle = PYLONTECH_POLL_CYCLE.SCAN_SERIAL_NUMBER;
 					        }
 					        else
 					        {
-					        	m_pylontechState = PYLONTECH_POLL_MODE.RUN_ANALOG_VALUES;
-					        	m_pollAddress = PY_START_ADDRESS;
-					        	m_valueCycles = PY_VALUE_CYCLES;
-					        	m_pollErrorCount = 0;
+					        	nextPollCycle = PYLONTECH_POLL_CYCLE.RUN_ANALOG_VALUES;
+					        	wrkPollAddress = PY_START_ADDRESS;
+					        	//m_valueCycles = PY_VALUE_CYCLES;
+					        	wrkPollErrorCount = 0;
 					        }
 					        break;
 						case RUN_ANALOG_VALUES:
 							// read values
 							
-							if( m_pollAddress < m_pollMax )
+							if( wrkPollAddress < wrkPollMax )
 							{
-								m_pollAddress++;
+								wrkPollAddress++;
 							}
 							else
 							{
-								m_pollAddress = PY_START_ADDRESS;
-								m_valueCycles--;
+								wrkPollAddress = PY_START_ADDRESS;
+								//m_valueCycles--;
 								
-								if( m_valueCycles <= 0 )
+								//if( m_valueCycles <= 0 )
 								{
-									m_pylontechState = PYLONTECH_POLL_MODE.RUN_CMD_GET_ALARM_INFO;
+									nextPollCycle = PYLONTECH_POLL_CYCLE.RUN_CMD_GET_ALARM_INFO;
 								}
 							}
 					        break;
 						case RUN_CMD_GET_ALARM_INFO:
 							// read values
 							
-							if( m_pollAddress < m_pollMax )
+							if( wrkPollAddress < wrkPollMax )
 							{
-								m_pollAddress++;
+								wrkPollAddress++;
 							}
 							else
 							{
-								m_pollAddress = PY_START_ADDRESS;
-								m_pylontechState = PYLONTECH_POLL_MODE.RUN_CMD_GET_MANAGEMENT_INFO;
+								wrkPollAddress = PY_START_ADDRESS;
+								nextPollCycle = PYLONTECH_POLL_CYCLE.RUN_CMD_GET_MANAGEMENT_INFO;
 							}
 					        break;
 						case RUN_CMD_GET_MANAGEMENT_INFO:
 							// read values
 							
-							if( m_pollAddress < m_pollMax )
+							if( wrkPollAddress < wrkPollMax )
 							{
-								m_pollAddress++;
+								wrkPollAddress++;
 							}
 							else
 							{
-								m_pollAddress = PY_START_ADDRESS;
-								m_pylontechState = PYLONTECH_POLL_MODE.RUN_ANALOG_VALUES;
-								m_valueCycles = PY_VALUE_CYCLES;
-								m_pollErrorCount = 0;
+								wrkPollAddress = PY_START_ADDRESS;
+								nextPollCycle = PYLONTECH_POLL_CYCLE.INACTIVE;
+								
+								//m_valueCycles = PY_VALUE_CYCLES;
+								wrkPollErrorCount = 0;
+								
+								wrkCommState = PYLONTECH_COMM_STATE.RUNNING;
 							}
 					        break;
+						case INACTIVE:
+						default:
+							break;
 							
 						}
+						wrkCommDirection = PYLONTECH_COMM_DIR.REQUEST;
 					}
 				}
 				catch( FrameTimeoutException | UnexpectedStartOfFrame | IOException ex )
 				{
-					log.error( ex.getClass().getSimpleName() + " in state " + m_pylontechState, ex );
-					switch( m_pylontechState )
+					log.error( ex.getClass().getSimpleName() + " in state " + currentPollCycle, ex );
+					if( wrkPollErrorCount < PY_MAX_POLL_ERRORS )
 					{
-					case SCAN_SERIAL_NUMBER:
-					case SCAN_MANUFACTURER_INFO:
-						initialize();
-					default:
-						break;
-					}
-					if( m_pollErrorCount < PY_MAX_POLL_ERRORS )
-					{
-						m_pollErrorCount++;
+						wrkPollErrorCount++;
 					}
 					else
 					{
-						m_communicationError = true;
+						wrkPollErrorCount = 0;
+						
+						wrkCommunicationError = true;
+						
+						serialConnection.handleError("poll error", ex );
+						
+						nextPollCycle = PYLONTECH_POLL_CYCLE.INACTIVE;
+						
+						currentPollCycle = PYLONTECH_POLL_CYCLE.INACTIVE;
 					}
+					switch( currentPollCycle  )
+					{
+					case SCAN_SERIAL_NUMBER:
+					case SCAN_MANUFACTURER_INFO:
+						wrkPollAddress = PY_START_ADDRESS;
+						nextPollCycle = PYLONTECH_POLL_CYCLE.SCAN_SERIAL_NUMBER;
+						return;
+					default:
+						break;
+					}
+					wrkCommDirection = PYLONTECH_COMM_DIR.REQUEST;
 				}
-				m_commMode = PYLONTECH_COMM_MODE.REQUEST;
 			}
-		}
-
-		private void initialize()
-		{
-			m_pollAddress = PY_START_ADDRESS;
-			m_pylontechState = PYLONTECH_POLL_MODE.SCAN_SERIAL_NUMBER;
-			m_commMode = PYLONTECH_COMM_MODE.REQUEST;
-			m_communicationError = false;
+			
+			if( nextPollCycle != null )
+			{
+				synchronized (this) {
+					wrkPylontechPollCycle = nextPollCycle;
+				}
+			}
 		}
 
 		public boolean hasCommunicationError()
 		{
-			return false;// TODO m_communicationError;
+			return wrkCommunicationError;
+		}
+		
+		public void quitCommunicationERror()
+		{
+			wrkCommunicationError = false;
 		}
 		
 		@Override
 		public void activate(String name) {
+			
 			super.activate(name);
 		}
 
@@ -355,10 +471,11 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 		super.activate(context, config.id(), config.alias(), config.enabled() );
 
 		m_worker.setParallelDevices( config.devicesInParallel() );
-		m_worker.setSerialInterface( config.serialInterfaceId() );
 		
-		m_worker.activate(config.id());
+		m_worker.setSerialInterface(serialConnection);
 		
+		m_worker.activate( config.id() + "Worker" );
+
 		m_numberOfDevices = this.config.devicesInParallel();
 		
 		int _initBmsMaxEverCharge = m_numberOfDevices * 25;
@@ -397,11 +514,46 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 	public void setStartStop(StartStop value) throws OpenemsNamedException {
 		this.log.info("setStartStop called with value: " + value.toString());
 
-		if (this.startStopTarget.getAndSet(value) != value) {
+		StartStop newValue = startStopTarget.getAndSet(value);
+		
+		if (newValue != value) {
 			// If the Start/Stop target is changed - (i.e the battery has been started from
 			// outside) -> force the state machine into undefined (so that the state machine
 			// will stop/start accordingly)
 			this.stateMachine.forceNextState(State.UNDEFINED);
+		}
+	}
+
+	public void startCommunication() 
+	{
+		try
+		{
+			serialConnection.setStartStop( StartStop.START );
+
+			m_worker.startCommunication();
+		}
+		catch( OpenemsNamedException ex )
+		{
+			this.stateMachine.forceNextState(State.UNDEFINED);
+			log.error("Error in startCommunication", ex);
+		}
+		
+	}
+
+	public boolean checkCommunication()
+	{
+		return !m_worker.hasCommunicationError() && m_worker.isRunning();
+	}
+	
+	public void stopCommunication()
+	{
+		try
+		{
+			serialConnection.setStartStop( StartStop.STOP );
+		}
+		catch( OpenemsNamedException ex )
+		{
+			log.error("Error in startCommunication", ex);
 		}
 	}
 
@@ -451,12 +603,16 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 		
 		boolean communicationError = m_worker.hasCommunicationError();
 		
-		channel(PylontechUS2000CBattery.ChannelId.COMMUNICATION_ERROR).setNextValue(m_moduleValues);
+		channel(PylontechUS2000CBattery.ChannelId.COMMUNICATION_ERROR).setNextValue(communicationError);
 		
 		if( communicationError )
 		{
 			try {
-				setStartStop(StartStop.STOP);
+				if( startStopTarget.get() != StartStop.UNDEFINED )
+				{
+					setStartStop(StartStop.UNDEFINED);
+					m_worker.quitCommunicationERror();
+				}
 			} catch (OpenemsNamedException e) {
 				// TODO Auto-generated catch block
 				log.error( e.getMessage(), e);
@@ -486,28 +642,28 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 			switch( receivedData.m_cmd )
 			{
 			case CMD_GET_SERIAL_NUMBER:
-				String serialNumber = Pylontech.parseModuleSerialNumber( receivedData.m_frame.info() );
+				String serialNumber = PylontechSerial.parseModuleSerialNumber( receivedData.m_frame.info() );
 				
 				m_serialNumbers[ receivedData.m_address - PY_START_ADDRESS ] = serialNumber;
 
 				newSerialNumber = true;
 				break;
 			case CMD_GET_MANUFACTURER_INFO:
-				Pylontech.ManufacturerInfo manufacturerInfo = Pylontech.parseManufacturerInfo(receivedData.m_frame.info());
+				PylontechSerial.ManufacturerInfo manufacturerInfo = PylontechSerial.parseManufacturerInfo(receivedData.m_frame.info());
 				
 				m_manufacturerInfos[ receivedData.m_address - PY_START_ADDRESS ] = manufacturerInfo;
 				
 				newManufacturerInfo = true;
 				break;
 			case CMD_GET_ALARM_INFO:
-				Pylontech.AlarmInfo alarmInfo = Pylontech.parseAlarm(receivedData.m_frame.info());
+				PylontechSerial.AlarmInfo alarmInfo = PylontechSerial.parseAlarm(receivedData.m_frame.info());
 				
 				m_alarmInfos[ receivedData.m_address - PY_START_ADDRESS ] = alarmInfo;
 
 				newAlarmInfo = true;
 				break;
 			case CMD_GET_ANALOG_VALUE:
-				Pylontech.ModuleValues moduleValues = Pylontech.parseValuesSingle(receivedData.m_frame.info());
+				PylontechSerial.ModuleValues moduleValues = PylontechSerial.parseValuesSingle(receivedData.m_frame.info());
 
 				m_moduleValues[ receivedData.m_address - PY_START_ADDRESS ] = moduleValues;
 
@@ -515,7 +671,7 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 				
 				break;
 			case CMD_GET_MANAGEMENT_INFO:
-				Pylontech.ManagementInfo managementInfo = Pylontech.parseManagementInfo(receivedData.m_frame.info());
+				PylontechSerial.ManagementInfo managementInfo = PylontechSerial.parseManagementInfo(receivedData.m_frame.info());
 
 				m_managementInfos[ receivedData.m_address - PY_START_ADDRESS ] = managementInfo;
 
@@ -626,7 +782,7 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 
 			channel( Battery.ChannelId.MAX_CELL_VOLTAGE ).setNextValue( (int )( maxCellVoltage * 1000.0 ) ); 
 			
-			
+			m_worker.startNextCycle();
 		}
 		
 		if( newManagementInfo && infoAvailable( m_managementInfos ) )
@@ -761,6 +917,8 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 			channel( PylontechUS2000CBattery.ChannelId.MODULE_LOW_TEMPERATURE_WARNING ).setNextValue(lowTemp);
 		}
 
+		m_worker.startNextCycle();
+	// TODO	m_worker.startNextCycle( )
 		//TODO
 		
 		/*
@@ -799,9 +957,6 @@ MODULE_HIGH_TEMPERATURE_WARNING
 		// Store the current state.
 		this.channel(PylontechUS2000CBattery.ChannelId.STATE_MACHINE)
 				.setNextValue(this.stateMachine.getCurrentState());
-
-		// Initialize start-stop channel
-		this._setStartStop(StartStop.UNDEFINED);
 
 		var context = new Context(this);
 

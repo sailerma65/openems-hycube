@@ -4,22 +4,21 @@ import io.openems.edge.battery.pylontech.us2000C.statemachine.StateMachine.State
 import io.openems.edge.common.startstop.StartStop;
 import io.openems.edge.common.statemachine.StateHandler;
 
-public class RunningHandler extends StateHandler<State, Context> {
+public class GoRunningHandler extends StateHandler<State, Context> {
 
 	@Override
 	public State runAndGetNextState(Context context) {
 		var battery = context.getParent();
 
-		if( !battery.checkCommunication() )
-		{
-			return State.ERROR;
-		}
-		if (battery.hasFaults()  ) {
+		// Mark as started
+		battery._setStartStop(StartStop.START);
+
+		if (battery.hasFaults() || !battery.checkCommunication() ) {
 			return State.UNDEFINED;
 		}
 
 		if (!context.isBatteryAwake()) {
-			return State.GO_RUNNING;
+			return State.UNDEFINED;
 		}
 
 		return State.RUNNING;

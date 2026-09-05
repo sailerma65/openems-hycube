@@ -13,6 +13,8 @@ public class StoppedHandler extends StateHandler<State, Context> {
 		// Mark as stopped
 		var battery = context.getParent();
 
+		battery.stopCommunication();
+
 		if (battery.hasFaults()) {
 			return State.UNDEFINED;
 		}

@@ -3,7 +3,7 @@ package io.openems.edge.battery.pylontech.us2000C.statemachine;
 import io.openems.edge.battery.pylontech.us2000C.statemachine.StateMachine.State;
 import io.openems.edge.common.statemachine.StateHandler;
 
-public class UndefinedHandler extends StateHandler<State, Context> {
+public class StartCommHandler extends StateHandler<State, Context> {
 
 	@Override
 	public State runAndGetNextState(Context context) {
@@ -13,7 +13,11 @@ public class UndefinedHandler extends StateHandler<State, Context> {
 		return switch (battery.getStartStopTarget()) {
 		case UNDEFINED -> State.UNDEFINED; // Stuck in undefined state
 		case START -> {
-			battery.startCommunication();
+			if (battery.hasFaults()) {
+				yield State.ERROR; // Faults exist - handle errors
+			} else if( battery.checkCommunication() ){
+				yield State.GO_RUNNING; // No faults, start the battery
+			}
 			yield State.INIT_COMM;
 		}
 		case STOP -> State.STOPPED; // Target state is stop -> stop it
