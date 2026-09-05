@@ -2,6 +2,8 @@ package io.openems.edge.battery.pylontech.us2000C.com;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Objects;
@@ -10,11 +12,13 @@ import java.util.logging.Logger;
 import com.fazecast.jSerialComm.SerialPort;
 
 /**
+ * PYLONTECH serial communication protocol
+ * 
  * Java port of pylontech.py without external dependencies.
  *
  * <p>The class expects a line-oriented serial connection where frames end with '\r'.
  */
-public class Pylontech {
+public class PylontechSerial {
 	
 	public static final long  TIMEOUT_MILLI = 1500l;
 	public static final long FACTOR_MILLI_TO_NANO = 1000000l;
@@ -37,46 +41,43 @@ public class Pylontech {
 		CMD_GET_SYSTEM_CHARGE_DISCHARGE_MANAGEMENT( 0x63 ),
 		CMD_SYSTEM_SHUTDOWN( 0x64 );
 		
-		private int m_cmd;
+		private int cmd;
 		
-		private CMD_DESCRIPTORS( int cmd )
+		private CMD_DESCRIPTORS( int _cmd )
 		{
-			m_cmd = cmd;
+			cmd = _cmd;
 		}
 		public int getCmd()
 		{
-			return m_cmd;
+			return cmd;
 		}
 	}
 	
 	
-	private static final Logger LOGGER = Logger.getLogger(Pylontech.class.getName());
+	private static final Logger LOGGER = Logger.getLogger(PylontechSerial.class.getName());
+	private static final long LINE_TIMEOUT = 500;
 
     public record Frame (int version, int address, int cid1, int cid2, int infoLength, byte[] info,
 			String asciiFrame, byte[] rawFrame )
     {
     }
    
-    private final SerialConnection connection;
+    private final SerialReadWrite connection;
 
     private ByteArrayOutputStream m_receiveBuffer = new ByteArrayOutputStream();
     
     private long m_receiveStartTime;
     
     
-    public Pylontech(String i_portName) {
-		SerialPortWrapper wrapper = new SerialPortWrapper(i_portName);
-		
-		wrapper.getPort().setBaudRate(115200);
-		wrapper.getPort().setNumDataBits(8);
-		wrapper.getPort().setNumStopBits(0);
-		wrapper.getPort().openPort();
-
-		wrapper.getPort().setComPortTimeouts(SerialPort.TIMEOUT_NONBLOCKING, 0, 0);
-
-    	this.connection = wrapper;
+    public PylontechSerial(SerialReadWrite _connection ) {
+    	connection = _connection;
     }
 
+    public void startWork()
+    {
+		connection.setComPortTimeouts(SerialPort.TIMEOUT_NONBLOCKING, 0, 0);
+    	
+    }
     public static int getFrameChecksum(byte[] frame) {
         int sum = 0;
         for (byte b : frame) {
@@ -115,7 +116,8 @@ public class Pylontech {
 
     public void sendCmdRaw(int address, int cmd, byte[] info) throws IOException {
         byte[] rawFrame = encodeCmd(address, 0x46, cmd, info == null ? new byte[0] : info);
-        connection.write(rawFrame);
+        
+        connection.writeBytes(rawFrame, rawFrame.length);
     }
 
     public void sendCmdRaw(int address, int cmd) throws IOException {
@@ -198,7 +200,7 @@ public class Pylontech {
     	{
         	byte[] buffer = new byte[ avail ];
     		
-        	int received = connection.readBytes(buffer, avail);
+        	int received = connection.readBytes( buffer,  avail );
         	
         	if( received < avail )
         	{
@@ -208,62 +210,92 @@ public class Pylontech {
     	startReceive();
     }
 
-    public static class UnexpectedStartOfFrame extends Exception
+    public static class UnexpectedStartOfFrame extends RuntimeException
     {
-    	UnexpectedStartOfFrame()
+    	private static final long serialVersionUID = 1L;
+
+		UnexpectedStartOfFrame()
     	{
     		super("UNEXPECTED start of frame character!");
     	}
     }
     
-    public static class FrameTimeoutException extends Exception
+    public static class FrameTimeoutException extends RuntimeException
     {
-    	FrameTimeoutException()
+    	private static final long serialVersionUID = 1L;
+
+		FrameTimeoutException()
     	{
     		super("Timeout waiting for frame");
     	}
     }
 
-    public Frame receiveOrWait() throws IOException, UnexpectedStartOfFrame, FrameTimeoutException {
+    public Frame receiveOrWait() throws IOException {
     	byte[] buffer = new byte[ 1 ];
 		
-    	while( connection.bytesAvailable() > 0 )
+    	while( connection.bytesAvailable() >= 1 )
     	{
         	int received = connection.readBytes(buffer, 1 );
         	
-        	if( received != 1 )
+        	if( received == 1 )
         	{
-        		throw new IOException( "UNEXPECTED number of received bytes!" );
-        	}
-        	
-        	if( m_receiveBuffer.size() == 0 )
-        	{
-        		if(  buffer[0] != '~' )
-        		{
-        			throw new UnexpectedStartOfFrame();
-        		}
-        	}
-        	
-        	m_receiveBuffer.write(buffer);
-        	
-        	if( buffer[0] == '\r' )
-        	{
-        		byte[] rawFrame = m_receiveBuffer.toByteArray();
-        		
-                byte[] f = decodeHwFrame(rawFrame);
-                return decodeFrame(f, rawFrame );
-        	}
-    	}
+            	if( m_receiveBuffer.size() == 0 )
+            	{
+            		if(  buffer[0] != '~' )
+            		{
+            			throw new UnexpectedStartOfFrame();
+            		}
+            	}
+            	
+            	m_receiveBuffer.write(buffer, 0,  1 );
+            	
+            	if( buffer[0] == '\r' )
+            	{
+            		byte[] rawFrame = m_receiveBuffer.toByteArray();
 
-    	if( System.nanoTime() - m_receiveStartTime > FACTOR_MILLI_TO_NANO * TIMEOUT_MILLI )
-    	{
-    		throw new FrameTimeoutException();
+                    byte[] f = decodeHwFrame(rawFrame);
+                    return decodeFrame(f, rawFrame );
+            	}
+        	}
     	}
-    	return null;
+       	if( System.nanoTime() - m_receiveStartTime > FACTOR_MILLI_TO_NANO * TIMEOUT_MILLI )
+       	{
+       		throw new FrameTimeoutException();
+       	}
+       	return null;
+    }
+    
+    private byte[] readLine() throws IOException
+    {
+    	ByteArrayOutputStream result = new ByteArrayOutputStream();
+    	
+    	long startTime = System.currentTimeMillis();
+    	
+    	byte[] buffer = new byte[ 1 ];
+
+    	while( true )
+    	{
+    		int received = connection.readBytes( buffer, 1 );
+    		
+    		if( received == 1 )
+    		{
+    			result.write( buffer );
+    			
+    			if( buffer[ 0 ] == '\r' || buffer[ 0 ] == '\n' )
+    			{
+    				break;
+    			}
+    		}
+    		else if( System.currentTimeMillis() - startTime > LINE_TIMEOUT )
+    		{
+    			throw new FrameTimeoutException();
+    		}
+    	}
+    	return result.toByteArray();
     }
     
     public Frame readFrame() throws IOException {
-        byte[] rawFrame = connection.readLine();
+        byte[] rawFrame = readLine();
         
         byte[] f = decodeHwFrame(rawFrame);
         return decodeFrame(f, rawFrame );

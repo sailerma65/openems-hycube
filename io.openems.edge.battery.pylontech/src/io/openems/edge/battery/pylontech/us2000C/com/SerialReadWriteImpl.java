@@ -1,6 +1,7 @@
 package io.openems.edge.battery.pylontech.us2000C.com;
 
-import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
 
 import org.osgi.service.component.ComponentContext;
 import org.osgi.service.component.annotations.Activate;
@@ -58,9 +59,6 @@ public class SerialReadWriteImpl extends AbstractOpenemsComponent implements Ser
 
 	private SerialPort serialPort;
 	
-	private ByteArrayOutputStream byteCollector = new ByteArrayOutputStream();
-	private boolean lineAvailable = false;
-
 	public SerialReadWriteImpl() {
 		super(
 				OpenemsComponent.ChannelId.values(), //
@@ -108,7 +106,7 @@ public class SerialReadWriteImpl extends AbstractOpenemsComponent implements Ser
 
 	private void closePort()
 	{
-		if( serialPort.isOpen() )
+		if( serialPort != null && serialPort.isOpen() )
 		{
 			serialPort.closePort();
 		}
@@ -117,18 +115,26 @@ public class SerialReadWriteImpl extends AbstractOpenemsComponent implements Ser
 	
 	@Override
 	public void setStartStop(StartStop value) throws OpenemsNamedException {
-		// We are not using _setStartStop() by purpose to avoid race conditions with not
-		// setting the Channel immediately
-		TestUtils.withValue(this, StartStoppable.ChannelId.START_STOP, switch (value) {
-		case START, UNDEFINED -> StartStop.START;
-		case STOP -> StartStop.STOP;
-		});
-
-		// Close existing Modbus Connection on STOP
-		if (value == StartStop.STOP) {
-			this.closePort();
+		switch( value )
+		{
+		case StartStop.START, StartStop.UNDEFINED ->
+		{
+			if( ensurePortIsOpen() )
+			{
+				_setStartStop(StartStop.START);
+				channel( SerialReadWrite.ChannelId.COMMUNICATION_FAILURE ).setNextValue( Boolean.FALSE );
+			}
+			else
+			{
+				_setStartStop(StartStop.UNDEFINED);
+			}
 		}
-		
+		case StartStop.STOP ->
+		{
+			closePort();
+			_setStartStop(StartStop.STOP);
+		}
+		}
 	}
 	
 	private boolean ensurePortIsOpen()
@@ -139,76 +145,63 @@ public class SerialReadWriteImpl extends AbstractOpenemsComponent implements Ser
 		}
 		else if( portName != null )
 		{
-			byteCollector.reset();
-			lineAvailable = false;
-			
-			serialPort = SerialPort.getCommPort(portName);
-			serialPort.setBaudRate(baudrate);
-			serialPort.setNumDataBits(databits);
-			serialPort.setNumStopBits( stopbits.getValue() );
-			serialPort.setParity( parity.getValue() );
-			
-			serialPort.openPort();
-			
-			serialPort.setComPortTimeouts( SerialPort.TIMEOUT_READ_SEMI_BLOCKING, 100, 0 );
-
-			return serialPort.isOpen();
-		}
-		return false;
-	}
-
-	@Override
-	public boolean isReadLineAvailable() {
-		if( ensurePortIsOpen() )
-		{
-			while( !lineAvailable )
+			try
 			{
-				byte[] buffer = new byte[1];
-			
-				int bytesRead = serialPort.readBytes( buffer, 1 );
+				serialPort = SerialPort.getCommPort(portName);
+				serialPort.setBaudRate(baudrate);
+				serialPort.setNumDataBits(databits);
+				serialPort.setNumStopBits( stopbits.getValue() );
+				serialPort.setParity( parity.getValue() );
 				
-				if( bytesRead == 1 )
-				{
-					byteCollector.writeBytes(buffer);
+				serialPort.openPort();
+				
+				serialPort.setComPortTimeouts( SerialPort.TIMEOUT_NONBLOCKING, 0, 0 );
 
-					if( buffer[ 0 ] == '\r' || buffer[ 0 ] == '\r' )
-					{
-						lineAvailable = true;
-					}
-				}
-				else
-				{
-					break;
-				}
+				channel( SerialReadWrite.ChannelId.BAD_PARAMETERS ).setNextValue( Boolean.FALSE );
+				channel( SerialReadWrite.ChannelId.COMMUNICATION_FAILURE ).setNextValue( Boolean.FALSE );
+
+				return serialPort.isOpen();
 			}
-			
-		}
-		return lineAvailable;
-	}
-
-	@Override
-	public byte[] readLine( int i_maxTimeout ) {
-		if( isReadLineAvailable() )
-		{
-			byte[] result = byteCollector.toByteArray();
-			
-			byteCollector.reset();
-			
-			lineAvailable = false;
-			
-			return result;
-		}
-		return null;
-	}
-
-	@Override
-	public boolean writeLine( byte[] line) {
-		if( ensurePortIsOpen() )
-		{
-			int written = serialPort.writeBytes( line, line.length );
-			
-			return written == line.length;
+			catch( Exception ex )
+			{
+				log.error("Exception opening port", ex);
+				channel( SerialReadWrite.ChannelId.FAILURE_STRING ).setNextValue( ex.getMessage() );
+				channel( SerialReadWrite.ChannelId.BAD_PARAMETERS ).setNextValue( Boolean.TRUE );
+			}
 		}
 		return false;
+	}
+
+	@Override
+	public int bytesAvailable()
+	{
+		return serialPort.bytesAvailable();
+	}
+	
+	@Override
+	public int readBytes( byte[] buffer, int length )
+	{
+		return serialPort.readBytes(buffer, length);
+	}
+	
+	@Override
+	public int writeBytes( byte[] buffer, int bytesToWrite  )
+	{
+		return serialPort.writeBytes(buffer, bytesToWrite );
+	}
+
+	@Override
+	public boolean setComPortTimeouts(int newTimeoutMode, int newReadTimeout, int newWriteTimeout) {
+		if( serialPort != null )
+			return serialPort.setComPortTimeouts(newTimeoutMode, newReadTimeout, newWriteTimeout);
+		return false;
+	}
+	
+	public void handleError( String context, Exception exc )
+	{
+		log.error( context, exc );
+		channel( SerialReadWrite.ChannelId.FAILURE_STRING ).setNextValue( exc.getMessage() );
+		channel( SerialReadWrite.ChannelId.COMMUNICATION_FAILURE ).setNextValue( Boolean.TRUE );
+		closePort();
 	}
 }

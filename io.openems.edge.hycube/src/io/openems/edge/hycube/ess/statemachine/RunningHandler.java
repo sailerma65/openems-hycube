@@ -20,7 +20,12 @@ public class RunningHandler extends StateHandler<State, Context> {
 	public State runAndGetNextState(Context context) throws OpenemsNamedException {
 		final var ess = context.getParent();
 
-		// Check for faults - transition to UNDEFINED if problems detected
+		// Check for faults - transition to UNDEFINED if problems detected##
+		
+		if( ess.getBattery().hasFaults() )
+		{
+			ess.getBattery().setStartStop( StartStop.START );
+		}
 		if (ess.hasFaults()) {
 			return State.UNDEFINED;
 		}
@@ -28,8 +33,6 @@ public class RunningHandler extends StateHandler<State, Context> {
 		// Mark as started
 		ess._setStartStop(StartStop.START);
 
-		ess.getBattery().start();
-		
 		return State.RUNNING;
 	}
 }

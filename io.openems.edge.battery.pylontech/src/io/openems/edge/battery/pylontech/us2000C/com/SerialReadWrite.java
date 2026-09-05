@@ -1,11 +1,29 @@
 package io.openems.edge.battery.pylontech.us2000C.com;
 
+import static io.openems.common.channel.AccessMode.READ_ONLY;
+import static io.openems.common.types.OpenemsType.STRING;
+
+import java.io.InputStream;
+import java.io.OutputStream;
+
+import io.openems.common.channel.Level;
 import io.openems.edge.common.channel.Doc;
 import io.openems.edge.common.component.OpenemsComponent;
 import io.openems.edge.common.startstop.StartStoppable;
 
 public interface SerialReadWrite extends OpenemsComponent, StartStoppable{
 	public static enum ChannelId implements io.openems.edge.common.channel.ChannelId {
+		BAD_PARAMETERS(Doc.of(Level.FAULT) //
+				.accessMode(READ_ONLY) //
+				.text("Interface parameters wrong")),
+
+		COMMUNICATION_FAILURE(Doc.of(Level.FAULT) //
+				.accessMode(READ_ONLY) //
+				.text("Communication failed")),
+
+		FAILURE_STRING(Doc.of(STRING) //
+				.accessMode(READ_ONLY) //
+				.text("Last failure reason or \"ok\"")),
 		;
 
 		private final Doc doc;
@@ -19,16 +37,24 @@ public interface SerialReadWrite extends OpenemsComponent, StartStoppable{
 			return this.doc;
 		}
 	}
+
+	public int bytesAvailable();
+
+	public int readBytes( byte[] buffer, int length );
+
+	public int writeBytes( byte[] buffer, int bytesToWrite  );
 	
-	// check if a line can be read using readline() without blocking
-	public boolean isReadLineAvailable();
-	
-	// reads bytes from serial interface. Lines can be terminated by \r or \n. 
-	// Termination character returned as last byte in resulting array.
-	// if no complete line is available, method returns null
-	public byte[] readLine( int maxTimeMS );
-	
-	// write a byte array to serial interface. 
-	public boolean writeLine( byte[] line );
+	// Timeout Modes
+	static final public int TIMEOUT_NONBLOCKING = 0x00000000;
+	static final public int TIMEOUT_READ_SEMI_BLOCKING = 0x00000001;
+	static final public int TIMEOUT_READ_BLOCKING = 0x00000010;
+	static final public int TIMEOUT_WRITE_BLOCKING = 0x00000100;
+
+	public boolean setComPortTimeouts(int newTimeoutMode, int newReadTimeout, int newWriteTimeout);
+
+	/** 
+	 * report failure state
+	 */
+	public void handleError( String context, Exception exc );
 
 }

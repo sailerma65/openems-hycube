@@ -23,6 +23,8 @@ public class GoRunningHandler extends StateHandler<State, Context> {
 			return State.ERROR;
 		}
 
+		ess.getBattery().start();
+
 		// end of initialization:switches on the CBi RAU (Remote actuator unit with lockout)
 		// - use runtime modbus register list
 		// - 
