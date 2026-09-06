@@ -1,4 +1,4 @@
-package io.openems.edge.hycube.denkovi;
+package io.openems.edge.io.denkovi;
 
 import org.osgi.service.metatype.annotations.AttributeDefinition;
 import org.osgi.service.metatype.annotations.ObjectClassDefinition;

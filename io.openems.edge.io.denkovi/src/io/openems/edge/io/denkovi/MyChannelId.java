@@ -1,4 +1,4 @@
-package io.openems.edge.hycube.denkovi;
+package io.openems.edge.io.denkovi;
 
 import io.openems.edge.common.channel.Doc;
 import io.openems.edge.common.channel.internal.AbstractDoc;

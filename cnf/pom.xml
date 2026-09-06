@@ -50,6 +50,11 @@
 			<version>2.11.4</version>
 		</dependency>
 		<dependency>
+			<groupId>org.usb4java</groupId>
+			<artifactId>usb4java-javax</artifactId>
+			<version>1.3.0</version>
+		</dependency>
+		<dependency>
 			<!--
 			Aalto XML: Ultra-high performance non-blocking XML processor
 			Changelog: https://github.com/FasterXML/aalto-xml/wiki#releases
