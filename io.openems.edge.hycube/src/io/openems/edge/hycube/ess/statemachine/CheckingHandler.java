@@ -1,7 +1,6 @@
 package io.openems.edge.hycube.ess.statemachine;
 
 import io.openems.common.exceptions.OpenemsError.OpenemsNamedException;
-import io.openems.edge.common.channel.ChannelId;
 import io.openems.edge.common.channel.IntegerReadChannel;
 import io.openems.edge.common.channel.IntegerWriteChannel;
 import io.openems.edge.common.channel.LongReadChannel;

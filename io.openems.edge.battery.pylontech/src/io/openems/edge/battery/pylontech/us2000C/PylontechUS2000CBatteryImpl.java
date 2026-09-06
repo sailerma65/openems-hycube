@@ -4,10 +4,6 @@ import static io.openems.edge.common.event.EdgeEventConstants.TOPIC_CYCLE_AFTER_
 import static io.openems.edge.common.event.EdgeEventConstants.TOPIC_CYCLE_BEFORE_PROCESS_IMAGE;
 import static org.osgi.service.component.annotations.ConfigurationPolicy.REQUIRE;
 
-import java.io.IOException;
-import java.util.LinkedHashMap;
-import java.util.Map.Entry;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.osgi.service.cm.ConfigurationAdmin;
@@ -28,14 +24,10 @@ import org.slf4j.LoggerFactory;
 import io.openems.common.exceptions.OpenemsError.OpenemsNamedException;
 import io.openems.common.exceptions.OpenemsException;
 import io.openems.common.referencetarget.GenerateTargetsFromReferences;
-import io.openems.common.worker.AbstractWorker;
 import io.openems.edge.battery.api.Battery;
 import io.openems.edge.battery.protection.BatteryProtection;
-import io.openems.edge.battery.pylontech.us2000C.com.PylontechSerial;
-import io.openems.edge.battery.pylontech.us2000C.com.PylontechSerial.CMD_DESCRIPTORS;
-import io.openems.edge.battery.pylontech.us2000C.com.PylontechSerial.Frame;
-import io.openems.edge.battery.pylontech.us2000C.com.PylontechSerial.FrameTimeoutException;
-import io.openems.edge.battery.pylontech.us2000C.com.PylontechSerial.UnexpectedStartOfFrame;
+import io.openems.edge.battery.pylontech.us2000C.PylontechProtocolWorker.FrameData;
+import io.openems.edge.battery.pylontech.us2000C.com.PylontechSerialProtocol;
 import io.openems.edge.battery.pylontech.us2000C.com.SerialReadWrite;
 import io.openems.edge.battery.pylontech.us2000C.statemachine.Context;
 import io.openems.edge.battery.pylontech.us2000C.statemachine.StateMachine;
@@ -101,369 +93,18 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 	private Config config = null;
 	private BatteryProtection batteryProtection = null;
 
-	private PylontechWorker m_worker = new PylontechWorker();
+	private PylontechProtocolWorker m_worker;
 	
 	private String[] m_serialNumbers = new String[16];
-	private PylontechSerial.ManufacturerInfo[] m_manufacturerInfos = new PylontechSerial.ManufacturerInfo[16];
-	private PylontechSerial.AlarmInfo[] m_alarmInfos = new PylontechSerial.AlarmInfo[16];
-	private PylontechSerial.ManagementInfo[] m_managementInfos = new PylontechSerial.ManagementInfo[16];
-	private PylontechSerial.ModuleValues[] m_moduleValues = new PylontechSerial.ModuleValues[16];
+	private PylontechSerialProtocol.ManufacturerInfo[] m_manufacturerInfos = new PylontechSerialProtocol.ManufacturerInfo[16];
+	private PylontechSerialProtocol.AlarmInfo[] m_alarmInfos = new PylontechSerialProtocol.AlarmInfo[16];
+	private PylontechSerialProtocol.ManagementInfo[] m_managementInfos = new PylontechSerialProtocol.ManagementInfo[16];
+	private PylontechSerialProtocol.ModuleValues[] m_moduleValues = new PylontechSerialProtocol.ModuleValues[16];
 	
-	private static final int PY_START_ADDRESS = 2;
+	static final int PY_START_ADDRESS = 2;
 	
-	private enum PYLONTECH_COMM_STATE{
-		INACTIVE,
-		INITIALIZING,
-		RUNNING
-	}
-	
-	private enum PYLONTECH_POLL_CYCLE{
-		INACTIVE(null),
-		SCAN_SERIAL_NUMBER( CMD_DESCRIPTORS.CMD_GET_SERIAL_NUMBER ),
-		SCAN_MANUFACTURER_INFO( CMD_DESCRIPTORS.CMD_GET_MANUFACTURER_INFO ),
-		RUN_ANALOG_VALUES( CMD_DESCRIPTORS.CMD_GET_ANALOG_VALUE ),
-		RUN_CMD_GET_ALARM_INFO( CMD_DESCRIPTORS.CMD_GET_ALARM_INFO ),
-		RUN_CMD_GET_MANAGEMENT_INFO( CMD_DESCRIPTORS.CMD_GET_MANAGEMENT_INFO );
-		
-		CMD_DESCRIPTORS descriptor;
-		
-		PYLONTECH_POLL_CYCLE( CMD_DESCRIPTORS descriptor )
-		{
-			this.descriptor = descriptor;
-		}
-	}
-	
-	private enum PYLONTECH_COMM_DIR{
-		REQUEST,
-		RESPONSE
-	}
-	
-	private static class FrameData
-	{
-		private int m_address;
-		private CMD_DESCRIPTORS m_cmd;
-		private Frame m_frame;
-		
-		private FrameData( int i_address, CMD_DESCRIPTORS i_descr, Frame i_frame )
-		{
-			m_address = i_address;
-			m_cmd = i_descr;
-			m_frame = i_frame;
-		}
-	}
-
-	private static class FrameKey
-	{
-		private int m_address;
-		private CMD_DESCRIPTORS m_cmd;
-
-		private FrameKey( int i_address, CMD_DESCRIPTORS i_descr )
-		{
-			m_address = i_address;
-			m_cmd = i_descr;
-		}
-
-		@Override
-		public int hashCode() {
-			return m_address + m_cmd.ordinal() << 8; 
-		}
-
-		@Override
-		public boolean equals(Object obj) {
-			if( obj instanceof FrameKey key )
-			{
-				return key.m_address == m_address && key.m_cmd == m_cmd;
-			}
-			return false;
-		}
-		
-		
-	}
-
-	private LinkedHashMap<FrameKey, FrameData> m_receivedFrames = new LinkedHashMap<>();
-
 	private int m_numberOfDevices;
 	
-	private class PylontechWorker extends AbstractWorker{
-		
-		private PylontechSerial wrkPylontechAdapter;
-
-		// sync
-		private PYLONTECH_POLL_CYCLE wrkPylontechPollCycle = PYLONTECH_POLL_CYCLE.SCAN_SERIAL_NUMBER;
-		
-		// single thr.
-		private int wrkPollAddress;
-		
-		// read
-		private int wrkPollMax;
-		
-		// single thr.
-		private PYLONTECH_COMM_DIR wrkCommDirection;
-		
-		private static final int PY_MAX_POLL_ERRORS = 4;
-
-		// single thr.
-		private int wrkPollErrorCount = 0;
-
-		private PYLONTECH_COMM_STATE wrkCommState = PYLONTECH_COMM_STATE.INACTIVE;
-		
-		
-		private boolean wrkActivated = false;
-
-		private volatile boolean wrkCommunicationError;
-		
-		private void setParallelDevices( int i_devices )
-		{
-			wrkPollMax = PY_START_ADDRESS + i_devices - 1;
-		}
-		
-		private void setSerialInterface( SerialReadWrite connection )
-		{
-			wrkPylontechAdapter = new PylontechSerial(connection);
-		}
-		
-		@Override
-		public void activate(String name, boolean initiallyTriggerNextRun) {
-			
-			super.activate(name, initiallyTriggerNextRun);
-			
-			synchronized( this )
-			{
-			  wrkActivated = true;
-			}
-		}
-		
-		
-
-		@Override
-		public void deactivate() {
-			synchronized( this )
-			{
-			  wrkActivated = false;
-			  wrkCommState = PYLONTECH_COMM_STATE.INACTIVE;
-			}
-			super.deactivate();
-		}
-
-		public synchronized boolean isActivated()
-		{
-			return wrkActivated;
-		}
-		
-		public synchronized boolean isRunning()
-		{
-			return isActivated() && wrkCommState == PYLONTECH_COMM_STATE.RUNNING;
-		}
-		
-		public synchronized void startCommunication()
-		{
-			wrkPylontechAdapter.startWork();
-			
-			wrkCommunicationError = false;
-			
-			wrkCommState = PYLONTECH_COMM_STATE.INITIALIZING;
-			
-			wrkCommDirection = PYLONTECH_COMM_DIR.REQUEST;
-			
-			wrkPollAddress = PY_START_ADDRESS;
-			
-			startNextCycle();
-		}
-		
-		public synchronized void startNextCycle()
-		{
-			if( wrkPylontechPollCycle == PYLONTECH_POLL_CYCLE.INACTIVE  && wrkCommState != PYLONTECH_COMM_STATE.INACTIVE )
-			{
-				if( wrkCommState == PYLONTECH_COMM_STATE.INITIALIZING )
-				{
-					wrkPylontechPollCycle = PYLONTECH_POLL_CYCLE.SCAN_SERIAL_NUMBER;
-				}
-				else
-				{
-					wrkPylontechPollCycle = PYLONTECH_POLL_CYCLE.RUN_ANALOG_VALUES;
-				}
-			}
-		}
-		
-		@Override
-		protected void forever() throws Throwable {
-			if( !serialConnection.isStarted() )
-				return;
-			
-			PYLONTECH_POLL_CYCLE currentPollCycle;
-			
-			synchronized( this )
-			{
-				if( wrkPylontechPollCycle == PYLONTECH_POLL_CYCLE.INACTIVE )
-				{
-					return;
-				}
-
-			    currentPollCycle = wrkPylontechPollCycle;
-			}
-			
-			PYLONTECH_POLL_CYCLE nextPollCycle = null;
-			
-			if( wrkCommDirection == PYLONTECH_COMM_DIR.REQUEST )
-			{
-				wrkPylontechAdapter.clearReceiveBuffer();
-				wrkPylontechAdapter.sendCmdWithAddressInfo( wrkPollAddress, currentPollCycle.descriptor );
-				wrkCommDirection = PYLONTECH_COMM_DIR.RESPONSE;
-			}
-			else
-			{
-				try
-				{
-					Frame receivedFrame = wrkPylontechAdapter.receiveOrWait();
-					
-					if( receivedFrame != null )
-					{
-						FrameKey key = new FrameKey( wrkPollAddress, currentPollCycle.descriptor );
-						FrameData data = new FrameData(wrkPollAddress, currentPollCycle.descriptor, receivedFrame );
-						
-						synchronized (m_receivedFrames ) {
-							m_receivedFrames.put(key, data);
-						}
-						
-						switch( currentPollCycle )
-						{
-						case SCAN_SERIAL_NUMBER:
-							 nextPollCycle = PYLONTECH_POLL_CYCLE.SCAN_MANUFACTURER_INFO;
-							break;
-						case SCAN_MANUFACTURER_INFO:
-					        if( wrkPollAddress < wrkPollMax )
-					        {
-					        	wrkPollAddress++;
-					        	nextPollCycle = PYLONTECH_POLL_CYCLE.SCAN_SERIAL_NUMBER;
-					        }
-					        else
-					        {
-					        	nextPollCycle = PYLONTECH_POLL_CYCLE.RUN_ANALOG_VALUES;
-					        	wrkPollAddress = PY_START_ADDRESS;
-					        	//m_valueCycles = PY_VALUE_CYCLES;
-					        	wrkPollErrorCount = 0;
-					        }
-					        break;
-						case RUN_ANALOG_VALUES:
-							// read values
-							
-							if( wrkPollAddress < wrkPollMax )
-							{
-								wrkPollAddress++;
-							}
-							else
-							{
-								wrkPollAddress = PY_START_ADDRESS;
-								//m_valueCycles--;
-								
-								//if( m_valueCycles <= 0 )
-								{
-									nextPollCycle = PYLONTECH_POLL_CYCLE.RUN_CMD_GET_ALARM_INFO;
-								}
-							}
-					        break;
-						case RUN_CMD_GET_ALARM_INFO:
-							// read values
-							
-							if( wrkPollAddress < wrkPollMax )
-							{
-								wrkPollAddress++;
-							}
-							else
-							{
-								wrkPollAddress = PY_START_ADDRESS;
-								nextPollCycle = PYLONTECH_POLL_CYCLE.RUN_CMD_GET_MANAGEMENT_INFO;
-							}
-					        break;
-						case RUN_CMD_GET_MANAGEMENT_INFO:
-							// read values
-							
-							if( wrkPollAddress < wrkPollMax )
-							{
-								wrkPollAddress++;
-							}
-							else
-							{
-								wrkPollAddress = PY_START_ADDRESS;
-								nextPollCycle = PYLONTECH_POLL_CYCLE.INACTIVE;
-								
-								//m_valueCycles = PY_VALUE_CYCLES;
-								wrkPollErrorCount = 0;
-								
-								wrkCommState = PYLONTECH_COMM_STATE.RUNNING;
-							}
-					        break;
-						case INACTIVE:
-						default:
-							break;
-							
-						}
-						wrkCommDirection = PYLONTECH_COMM_DIR.REQUEST;
-					}
-				}
-				catch( FrameTimeoutException | UnexpectedStartOfFrame | IOException ex )
-				{
-					log.error( ex.getClass().getSimpleName() + " in state " + currentPollCycle, ex );
-					if( wrkPollErrorCount < PY_MAX_POLL_ERRORS )
-					{
-						wrkPollErrorCount++;
-					}
-					else
-					{
-						wrkPollErrorCount = 0;
-						
-						wrkCommunicationError = true;
-						
-						serialConnection.handleError("poll error", ex );
-						
-						nextPollCycle = PYLONTECH_POLL_CYCLE.INACTIVE;
-						
-						currentPollCycle = PYLONTECH_POLL_CYCLE.INACTIVE;
-					}
-					switch( currentPollCycle  )
-					{
-					case SCAN_SERIAL_NUMBER:
-					case SCAN_MANUFACTURER_INFO:
-						wrkPollAddress = PY_START_ADDRESS;
-						nextPollCycle = PYLONTECH_POLL_CYCLE.SCAN_SERIAL_NUMBER;
-						return;
-					default:
-						break;
-					}
-					wrkCommDirection = PYLONTECH_COMM_DIR.REQUEST;
-				}
-			}
-			
-			if( nextPollCycle != null )
-			{
-				synchronized (this) {
-					wrkPylontechPollCycle = nextPollCycle;
-				}
-			}
-		}
-
-		public boolean hasCommunicationError()
-		{
-			return wrkCommunicationError;
-		}
-		
-		public void quitCommunicationERror()
-		{
-			wrkCommunicationError = false;
-		}
-		
-		@Override
-		public void activate(String name) {
-			
-			super.activate(name);
-		}
-
-		@Override
-		protected int getCycleTime() {
-			return 50;
-		}
-		
-	}
 	@Activate
 	void activate(ComponentContext context, Config config) throws OpenemsException {
 		this.config = config;
@@ -620,50 +261,35 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 			return;
 		}
 		
-		do {
-			FrameData receivedData;
-			FrameKey receivedKey;
-			
-			synchronized( m_receivedFrames )
-			{
-				if( m_receivedFrames.isEmpty() )
-				{
-					break;
-				}
-				
-				Entry<FrameKey, FrameData> entry = m_receivedFrames.firstEntry();
-				
-				receivedData = entry.getValue();
-				receivedKey = entry.getKey();
-
-				m_receivedFrames.remove(receivedKey);
-			}
+		FrameData receivedData;
+		
+		while( ( receivedData = m_worker.getNextFrame() ) != null ) {
 			
 			switch( receivedData.m_cmd )
 			{
 			case CMD_GET_SERIAL_NUMBER:
-				String serialNumber = PylontechSerial.parseModuleSerialNumber( receivedData.m_frame.info() );
+				String serialNumber = PylontechSerialProtocol.parseModuleSerialNumber( receivedData.m_frame.info() );
 				
 				m_serialNumbers[ receivedData.m_address - PY_START_ADDRESS ] = serialNumber;
 
 				newSerialNumber = true;
 				break;
 			case CMD_GET_MANUFACTURER_INFO:
-				PylontechSerial.ManufacturerInfo manufacturerInfo = PylontechSerial.parseManufacturerInfo(receivedData.m_frame.info());
+				PylontechSerialProtocol.ManufacturerInfo manufacturerInfo = PylontechSerialProtocol.parseManufacturerInfo(receivedData.m_frame.info());
 				
 				m_manufacturerInfos[ receivedData.m_address - PY_START_ADDRESS ] = manufacturerInfo;
 				
 				newManufacturerInfo = true;
 				break;
 			case CMD_GET_ALARM_INFO:
-				PylontechSerial.AlarmInfo alarmInfo = PylontechSerial.parseAlarm(receivedData.m_frame.info());
+				PylontechSerialProtocol.AlarmInfo alarmInfo = PylontechSerialProtocol.parseAlarm(receivedData.m_frame.info());
 				
 				m_alarmInfos[ receivedData.m_address - PY_START_ADDRESS ] = alarmInfo;
 
 				newAlarmInfo = true;
 				break;
 			case CMD_GET_ANALOG_VALUE:
-				PylontechSerial.ModuleValues moduleValues = PylontechSerial.parseValuesSingle(receivedData.m_frame.info());
+				PylontechSerialProtocol.ModuleValues moduleValues = PylontechSerialProtocol.parseValuesSingle(receivedData.m_frame.info());
 
 				m_moduleValues[ receivedData.m_address - PY_START_ADDRESS ] = moduleValues;
 
@@ -671,7 +297,7 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 				
 				break;
 			case CMD_GET_MANAGEMENT_INFO:
-				PylontechSerial.ManagementInfo managementInfo = PylontechSerial.parseManagementInfo(receivedData.m_frame.info());
+				PylontechSerialProtocol.ManagementInfo managementInfo = PylontechSerialProtocol.parseManagementInfo(receivedData.m_frame.info());
 
 				m_managementInfos[ receivedData.m_address - PY_START_ADDRESS ] = managementInfo;
 
@@ -681,7 +307,6 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 				break;
 			}
 		}
-		while( true );
 		
 		if( ( newSerialNumber || newManufacturerInfo ) && m_serialNumbers[ 0 ] != null && m_manufacturerInfos[ 0 ] != null )
 		{

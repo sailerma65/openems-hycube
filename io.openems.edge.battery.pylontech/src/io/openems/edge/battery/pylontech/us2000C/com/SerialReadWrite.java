@@ -3,9 +3,6 @@ package io.openems.edge.battery.pylontech.us2000C.com;
 import static io.openems.common.channel.AccessMode.READ_ONLY;
 import static io.openems.common.types.OpenemsType.STRING;
 
-import java.io.InputStream;
-import java.io.OutputStream;
-
 import io.openems.common.channel.Level;
 import io.openems.edge.common.channel.Doc;
 import io.openems.edge.common.component.OpenemsComponent;

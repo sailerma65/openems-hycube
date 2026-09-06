@@ -1,8 +1,5 @@
 package io.openems.edge.battery.pylontech.us2000C.com;
 
-import java.io.InputStream;
-import java.io.OutputStream;
-
 import org.osgi.service.component.ComponentContext;
 import org.osgi.service.component.annotations.Activate;
 import org.osgi.service.component.annotations.Component;
@@ -24,7 +21,6 @@ import io.openems.edge.common.component.ComponentManager;
 import io.openems.edge.common.component.OpenemsComponent;
 import io.openems.edge.common.startstop.StartStop;
 import io.openems.edge.common.startstop.StartStoppable;
-import io.openems.edge.common.test.TestUtils;
 
 /**
  * Provides a service for connecting to, querying and writing to a Modbus/RTU

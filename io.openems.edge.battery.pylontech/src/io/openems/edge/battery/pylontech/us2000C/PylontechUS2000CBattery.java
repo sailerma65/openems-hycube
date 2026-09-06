@@ -1,12 +1,8 @@
 package io.openems.edge.battery.pylontech.us2000C;
 
 import static io.openems.common.channel.AccessMode.READ_ONLY;
-import static io.openems.common.channel.AccessMode.READ_WRITE;
 import static io.openems.common.channel.Unit.DEGREE_CELSIUS;
-import static io.openems.common.channel.Unit.KILOOHM;
 import static io.openems.common.channel.Unit.NONE;
-import static io.openems.common.channel.Unit.VOLT;
-import static io.openems.common.channel.Unit.WATT_HOURS;
 import static io.openems.common.types.OpenemsType.BOOLEAN;
 import static io.openems.common.types.OpenemsType.INTEGER;
 import static io.openems.common.types.OpenemsType.STRING;
@@ -17,7 +13,6 @@ import io.openems.edge.battery.api.Battery;
 import io.openems.edge.battery.pylontech.us2000C.statemachine.StateMachine.State;
 import io.openems.edge.common.channel.Channel;
 import io.openems.edge.common.channel.Doc;
-import io.openems.edge.common.channel.IntegerDoc;
 import io.openems.edge.common.component.OpenemsComponent;
 import io.openems.edge.common.startstop.StartStop;
 import io.openems.edge.common.startstop.StartStoppable;
