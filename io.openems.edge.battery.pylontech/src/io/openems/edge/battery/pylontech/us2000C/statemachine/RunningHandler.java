@@ -1,7 +1,6 @@
 package io.openems.edge.battery.pylontech.us2000C.statemachine;
 
 import io.openems.edge.battery.pylontech.us2000C.statemachine.StateMachine.State;
-import io.openems.edge.common.startstop.StartStop;
 import io.openems.edge.common.statemachine.StateHandler;
 
 public class RunningHandler extends StateHandler<State, Context> {

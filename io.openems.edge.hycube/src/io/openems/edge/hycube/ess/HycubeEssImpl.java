@@ -13,7 +13,6 @@ import static org.osgi.service.component.annotations.ReferencePolicyOption.GREED
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
-import io.openems.edge.io.api.DigitalOutput;
 
 import org.osgi.service.cm.ConfigurationAdmin;
 import org.osgi.service.component.ComponentContext;
@@ -45,7 +44,6 @@ import io.openems.edge.bridge.modbus.api.element.UnsignedDoublewordElement;
 import io.openems.edge.bridge.modbus.api.element.UnsignedWordElement;
 import io.openems.edge.bridge.modbus.api.task.FC3ReadRegistersTask;
 import io.openems.edge.bridge.modbus.api.task.FC6WriteRegisterTask;
-import io.openems.edge.common.channel.BooleanWriteChannel;
 import io.openems.edge.common.channel.Channel;
 import io.openems.edge.common.channel.EnumReadChannel;
 import io.openems.edge.common.channel.IntegerReadChannel;
@@ -73,13 +71,23 @@ import io.openems.edge.hycube.ess.statemachine.Context;
 import io.openems.edge.hycube.ess.statemachine.InitValidation;
 import io.openems.edge.hycube.ess.statemachine.StateMachine;
 import io.openems.edge.hycube.ess.statemachine.StateMachine.State;
+import io.openems.edge.io.api.DigitalOutput;
 import io.openems.edge.timedata.api.Timedata;
 import io.openems.edge.timedata.api.TimedataProvider;
 import io.openems.edge.timedata.api.utils.CalculateEnergyFromPower;
 
 /**
- * Implementation of the Hycube ESS component.
+ * Implementation of the Hycube eCompact neo ESS component.
+ * 
+ * It consists of a Sermatec hybrid inverter SMT-5K-TL-LV (with Hycube label) and 2-6 Pylontech US2000C batteries.
+ * The OpenEMS implementation replaces the software formerly running on a Chipsee controller.
  *
+ * Connected components: 
+ * HycubePVInverter: Provides PV inverter data in a separate component
+ * PylontechUS2000Battery: Provides battery informations
+ * DenkoviRelaisBoard: Relais output 7 of this board is used to control the RAU (Remote actor unit, switchable fuse in the DC 
+ * connection between batteries and inverter)
+ * 
  * <p>
  */
 @Designate(ocd = Config.class, factory = true)
