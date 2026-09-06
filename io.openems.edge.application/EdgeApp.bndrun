@@ -225,6 +225,7 @@
 	bnd.identity;id='io.openems.edge.timeofusetariff.tibber',\
 	bnd.identity;id='io.openems.edge.victron',\
 	bnd.identity;id='io.openems.edge.weather.openmeteo',\
+	bnd.identity;id='io.openems.edge.io.denkovi',\
 	bnd.identity;id='io.openems.edge.hycube'
 -runbundles: \
 	bcpkix;version='[1.85.0,1.85.1)',\
@@ -469,6 +470,8 @@
 	io.openems.wrapper.retrofit2;version=snapshot,\
 	io.openems.wrapper.sdnotify;version=snapshot,\
 	io.openems.wrapper.tribuo;version=snapshot,\
+	io.openems.edge.hycube;version=snapshot,\
+	io.openems.edge.io.denkovi;version=snapshot,\
 	io.reactivex.rxjava3.rxjava;version='[3.1.12,3.1.13)',\
 	javax.jmdns;version='[3.6.3,3.6.4)',\
 	org.apache.commons.collections;version='[3.2.2,3.2.3)',\
@@ -506,5 +509,4 @@
 	org.owasp.encoder;version='[1.4.0,1.4.1)',\
 	reactive-streams;version='[1.0.4,1.0.5)',\
 	rrd4j;version='[3.10.0,3.10.1)',\
-	stax2-api;version='[4.3.0,4.3.1)',\
-	io.openems.edge.hycube;version=snapshot
+	stax2-api;version='[4.3.0,4.3.1)'
