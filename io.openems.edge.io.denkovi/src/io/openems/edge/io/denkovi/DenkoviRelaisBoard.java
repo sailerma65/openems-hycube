@@ -12,7 +12,7 @@ import io.openems.edge.io.api.DigitalOutput;
  */
 public interface DenkoviRelaisBoard extends DigitalOutput, OpenemsComponent {
 	public enum ChannelId implements io.openems.edge.common.channel.ChannelId {
-		USB_COMMUNICATION_FAILED(Doc.of(Level.FAULT)); //
+		SLAVE_COMMUNICATION_FAILED(Doc.of(Level.FAULT)); //
 
 		private final Doc doc;
 
