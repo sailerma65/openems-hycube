@@ -93,7 +93,7 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 	private Config config = null;
 	private BatteryProtection batteryProtection = null;
 
-	private PylontechProtocolWorker m_worker;
+	private PylontechProtocolWorker m_worker = new PylontechProtocolWorker();
 	
 	private String[] m_serialNumbers = new String[16];
 	private PylontechSerialProtocol.ManufacturerInfo[] m_manufacturerInfos = new PylontechSerialProtocol.ManufacturerInfo[16];
