@@ -9,6 +9,11 @@ import io.openems.edge.hycube.ess.statemachine.StateMachine.State;
 public class StoppedHandler extends StateHandler<State, Context> {
 
 	@Override
+	protected String debugLog() {
+		return State.STOPPED.toString();
+	}
+
+	@Override
 	public State runAndGetNextState(Context context) throws OpenemsNamedException {
 		final HycubeEssImpl inverter = context.getParent();
 

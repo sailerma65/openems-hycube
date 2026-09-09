@@ -54,4 +54,5 @@ public interface SerialReadWrite extends OpenemsComponent, StartStoppable{
 	 */
 	public void handleError( String context, Exception exc );
 
+	public boolean ensurePortIsOpen();
 }

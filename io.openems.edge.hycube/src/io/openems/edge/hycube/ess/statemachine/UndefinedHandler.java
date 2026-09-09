@@ -5,6 +5,12 @@ import io.openems.edge.hycube.ess.statemachine.StateMachine.State;
 
 public class UndefinedHandler extends StateHandler<State, Context> {
 
+	
+	@Override
+	protected String debugLog() {
+		return State.UNDEFINED.toString();
+	}
+
 	@Override
 	public State runAndGetNextState(Context context) {
 		final var ess = context.getParent();

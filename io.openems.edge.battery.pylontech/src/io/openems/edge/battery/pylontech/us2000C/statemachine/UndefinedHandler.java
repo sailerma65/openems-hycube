@@ -6,6 +6,11 @@ import io.openems.edge.common.statemachine.StateHandler;
 public class UndefinedHandler extends StateHandler<State, Context> {
 
 	@Override
+	protected String debugLog() {
+		return State.UNDEFINED.toString();
+	}
+
+	@Override
 	public State runAndGetNextState(Context context) {
 
 		var battery = context.getParent();

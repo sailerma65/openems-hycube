@@ -105,6 +105,8 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 	
 	private int m_numberOfDevices;
 	
+	private PylontechUS2000CBatteryProtectionDefinition protectionDef;
+	
 	@Activate
 	void activate(ComponentContext context, Config config) throws OpenemsException {
 		this.config = config;
@@ -123,11 +125,13 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 		int _initBmsMaxEverDischarge = m_numberOfDevices * 25;
 		int _maxIncreasePerSecond = m_numberOfDevices * 5;
 		
+		protectionDef = new PylontechUS2000CBatteryProtectionDefinition( 
+				_initBmsMaxEverCharge, _initBmsMaxEverDischarge, _maxIncreasePerSecond );
+		
 		// TODO Protection-Werte abhängig von devicesInParallel
 		// maxEverCharge, maxEverDischarge, increasePerSecond
 		this.batteryProtection = BatteryProtection.create(this) //
-				.applyBatteryProtectionDefinition(new PylontechUS2000CBatteryProtectionDefinition( 
-						_initBmsMaxEverCharge, _initBmsMaxEverDischarge, _maxIncreasePerSecond ),
+				.applyBatteryProtectionDefinition(protectionDef,
 						this.componentManager) //
 				.build();
 		
@@ -148,7 +152,19 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 
 	@Override
 	public String debugLog() {
+		super.debugLog();
 		return Battery.generateDebugLog(this, this.stateMachine);
+	}
+
+	/**
+	 * Uses Info Log for further debug features.
+	 */
+	@Override
+	protected void logDebug(Logger log, String message) {
+		super.logDebug(log, message);
+		if (this.config.debugMode()) {
+			this.logInfo(this.log, message);
+		}
 	}
 
 	@Override
@@ -183,6 +199,12 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 
 	public boolean checkCommunication()
 	{
+		String message = new StringBuilder().append("WRunning:").append(m_worker.isRunning()).append("|WCommError").append(m_worker.hasCommunicationError()).toString();
+		
+		logDebug(this.log, message );
+		
+		
+		
 		return !m_worker.hasCommunicationError() && m_worker.isRunning();
 	}
 	
@@ -249,7 +271,9 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 		if( communicationError )
 		{
 			try {
-				if( startStopTarget.get() != StartStop.UNDEFINED )
+				State current = stateMachine.getCurrentState();
+				
+				if( current == State.INIT_COMM || current == State.RUNNING )
 				{
 					setStartStop(StartStop.UNDEFINED);
 					m_worker.quitCommunicationERror();
@@ -265,41 +289,41 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 		
 		while( ( receivedData = m_worker.getNextFrame() ) != null ) {
 			
-			switch( receivedData.m_cmd )
+			switch( receivedData.cmd )
 			{
 			case CMD_GET_SERIAL_NUMBER:
-				String serialNumber = PylontechSerialProtocol.parseModuleSerialNumber( receivedData.m_frame.info() );
+				String serialNumber = PylontechSerialProtocol.parseModuleSerialNumber( receivedData.frame.info() );
 				
-				m_serialNumbers[ receivedData.m_address - PY_START_ADDRESS ] = serialNumber;
+				m_serialNumbers[ receivedData.address - PY_START_ADDRESS ] = serialNumber;
 
 				newSerialNumber = true;
 				break;
 			case CMD_GET_MANUFACTURER_INFO:
-				PylontechSerialProtocol.ManufacturerInfo manufacturerInfo = PylontechSerialProtocol.parseManufacturerInfo(receivedData.m_frame.info());
+				PylontechSerialProtocol.ManufacturerInfo manufacturerInfo = PylontechSerialProtocol.parseManufacturerInfo(receivedData.frame.info());
 				
-				m_manufacturerInfos[ receivedData.m_address - PY_START_ADDRESS ] = manufacturerInfo;
+				m_manufacturerInfos[ receivedData.address - PY_START_ADDRESS ] = manufacturerInfo;
 				
 				newManufacturerInfo = true;
 				break;
 			case CMD_GET_ALARM_INFO:
-				PylontechSerialProtocol.AlarmInfo alarmInfo = PylontechSerialProtocol.parseAlarm(receivedData.m_frame.info());
+				PylontechSerialProtocol.AlarmInfo alarmInfo = PylontechSerialProtocol.parseAlarm(receivedData.frame.info());
 				
-				m_alarmInfos[ receivedData.m_address - PY_START_ADDRESS ] = alarmInfo;
+				m_alarmInfos[ receivedData.address - PY_START_ADDRESS ] = alarmInfo;
 
 				newAlarmInfo = true;
 				break;
 			case CMD_GET_ANALOG_VALUE:
-				PylontechSerialProtocol.ModuleValues moduleValues = PylontechSerialProtocol.parseValuesSingle(receivedData.m_frame.info());
+				PylontechSerialProtocol.ModuleValues moduleValues = PylontechSerialProtocol.parseValuesSingle(receivedData.frame.info());
 
-				m_moduleValues[ receivedData.m_address - PY_START_ADDRESS ] = moduleValues;
+				m_moduleValues[ receivedData.address - PY_START_ADDRESS ] = moduleValues;
 
 				newModuleValue = true;
 				
 				break;
 			case CMD_GET_MANAGEMENT_INFO:
-				PylontechSerialProtocol.ManagementInfo managementInfo = PylontechSerialProtocol.parseManagementInfo(receivedData.m_frame.info());
+				PylontechSerialProtocol.ManagementInfo managementInfo = PylontechSerialProtocol.parseManagementInfo(receivedData.frame.info());
 
-				m_managementInfos[ receivedData.m_address - PY_START_ADDRESS ] = managementInfo;
+				m_managementInfos[ receivedData.address - PY_START_ADDRESS ] = managementInfo;
 
 				newManagementInfo = true;
 				break;
@@ -440,24 +464,18 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 
 			}
 
-			if( !chargeEnable )
-			{
-				chargeCurrent = 0;
-			}
+			protectionDef._setChargeAllowed(chargeEnable);
+			protectionDef._setDischargeAllowed(dichargeEnable);
 			
-			if( !dichargeEnable )
-			{
-				dischargeCurrent = 0;
-			}
-
 			channel( BatteryProtection.ChannelId.BP_CHARGE_BMS ).setNextValue( ( int )chargeCurrent );
 			channel( BatteryProtection.ChannelId.BP_DISCHARGE_BMS ).setNextValue( ( int )dischargeCurrent );
 
-			// channels Battery.ChannelId.CHARGE_MAX_VOLTAGE and Battery.ChannelId.CHARGE_MAX_CURRENT
+			// channels Battery.ChannelId.DISCHARGE_MAX_CURRENT and Battery.ChannelId.CHARGE_MAX_CURRENT
 			// are set by BatteryProtection
 
 			channel( Battery.ChannelId.DISCHARGE_MIN_VOLTAGE ).setNextValue( ( int )dischargeVoltage );
-			channel( Battery.ChannelId.DISCHARGE_MAX_CURRENT ).setNextValue( ( int )dischargeCurrent ); 
+
+			channel( Battery.ChannelId.CHARGE_MAX_VOLTAGE ).setNextValue( ( int )chargeVoltage ); 
 
 			getMaxChargeVoltageChannel().setNextValue( ( int )( chargeVoltage * 10 ) );
 			getMaxChargeCurrentChannel().setNextValue( ( int )( chargeCurrent * 10 ) );

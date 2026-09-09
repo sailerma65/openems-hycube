@@ -9,6 +9,10 @@ import io.openems.edge.hycube.ess.statemachine.StateMachine.State;
  * Handles the GO_STOPPED state - transition from running to stopped.
  */
 public class GoStoppedHandler extends StateHandler<State, Context> {
+	@Override
+	protected String debugLog() {
+		return State.GO_STOPPED.toString();
+	}
 
 	@Override
 	public State runAndGetNextState(Context context) throws OpenemsNamedException {

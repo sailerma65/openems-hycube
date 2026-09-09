@@ -15,6 +15,10 @@ import io.openems.edge.hycube.ess.HycubeEssImpl;
  * state machine transitions and ensures the inverter is ready for operation.
  */
 public class RunningHandler extends StateHandler<State, Context> {
+	@Override
+	protected String debugLog() {
+		return State.RUNNING.toString();
+	}
 
 	@Override
 	public State runAndGetNextState(Context context) throws OpenemsNamedException {

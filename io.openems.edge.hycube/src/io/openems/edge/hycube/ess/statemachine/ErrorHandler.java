@@ -12,6 +12,11 @@ public class ErrorHandler extends StateHandler<State, Context> {
 	private static final int WAIT_SECONDS = 120;
 
 	private Instant entryAt = Instant.MIN;
+	
+	@Override
+	protected String debugLog() {
+		return State.ERROR.toString();
+	}
 
 	@Override
 	protected void onEntry(Context context) throws OpenemsNamedException {

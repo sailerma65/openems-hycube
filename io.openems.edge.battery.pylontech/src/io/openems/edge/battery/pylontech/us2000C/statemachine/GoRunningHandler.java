@@ -5,6 +5,11 @@ import io.openems.edge.common.startstop.StartStop;
 import io.openems.edge.common.statemachine.StateHandler;
 
 public class GoRunningHandler extends StateHandler<State, Context> {
+	@Override
+	protected String debugLog() {
+		return State.GO_RUNNING.toString();
+	}
+
 
 	@Override
 	public State runAndGetNextState(Context context) {

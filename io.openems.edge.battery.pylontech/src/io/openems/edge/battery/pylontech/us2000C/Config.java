@@ -28,5 +28,8 @@ import io.openems.edge.common.startstop.StartStopConfig;
 	@AttributeDefinition(name = "Parallel Devices", description = "Number of devices in parallel")
 	int devicesInParallel() default 4;
 
+	@AttributeDefinition(name = "Debug", description = "Enable debug mode?")
+	boolean debugMode() default false;
+
 	String webconsole_configurationFactory_nameHint() default "Battery Pylontech US2000C [{id}]";
 }

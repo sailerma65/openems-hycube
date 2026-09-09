@@ -430,6 +430,7 @@ public class HycubeEssImpl extends AbstractOpenemsModbusComponent
 	 */
 	@Override
 	protected void logDebug(Logger log, String message) {
+		super.logDebug(log, message);
 		if (this.config.debugMode()) {
 			this.logInfo(this.log, message);
 		}
@@ -442,12 +443,9 @@ public class HycubeEssImpl extends AbstractOpenemsModbusComponent
 	
 	@Override
 	public String debugLog() {
-		return "SoC:" + this.getSoc().asString() //
-				+ "|L:" + this.getActivePower().asString() + "/" + this.getReactivePower().asString() + "|Phase:"
-				+ this.config.phase() + "|Allowed:" + this.getAllowedChargePower().asStringWithoutUnit() + ";" //
-				+ this.getAllowedDischargePower().asString() //
-
-				+ "\n" + "|" + this.getGridModeChannel().value().asOptionString();
+		return stateMachine.debugLog() + "|SoC:" + this.getSoc().asString() //
+				+ "|L:" + this.getActivePower().asString() + "|Allowed:" + this.getAllowedChargePower().asStringWithoutUnit() + ";" //
+				+ this.getAllowedDischargePower().asStringWithoutUnit() + "|" + this.getGridModeChannel().value().asOptionString();
 	}
 
 	@Override
