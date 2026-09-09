@@ -10,6 +10,7 @@ public class PylontechUS2000CBatteryProtectionDefinition implements BatteryProte
 	private int initBmsMaxEverCharge;
 	private int initBmsMaxEverDischarge;
 	private double maxIncreasePerSecond;
+	private volatile boolean chargeAllowed, dischargeAllowed;
 	
 	public PylontechUS2000CBatteryProtectionDefinition( int _initBmsMaxEverCharge, int _initBmsMaxEverDischarge, double _maxIncreasePerSecond )
 	{
@@ -78,13 +79,22 @@ public class PylontechUS2000CBatteryProtectionDefinition implements BatteryProte
 		return PolyLine.empty();
 	}
 
+	void _setChargeAllowed( boolean _allowed )
+	{
+		chargeAllowed = _allowed;
+	}
 	@Override
 	public boolean isChargeAllowed() {
-		return true;
+		return chargeAllowed;
 	}
 
+	void _setDischargeAllowed( boolean _allowed )
+	{
+		dischargeAllowed = _allowed;
+	}
+	
 	@Override
 	public boolean isDischargeAllowed() {
-		return true;
+		return dischargeAllowed;
 	}
 }

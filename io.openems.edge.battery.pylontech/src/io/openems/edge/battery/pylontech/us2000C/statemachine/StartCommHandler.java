@@ -13,6 +13,10 @@ public class StartCommHandler extends StateHandler<State, Context> {
 		return switch (battery.getStartStopTarget()) {
 		case UNDEFINED -> State.UNDEFINED; // Stuck in undefined state
 		case START -> {
+			if( !battery.checkCommunication() )
+			{
+				yield State.UNDEFINED;
+			}
 			if (battery.hasFaults()) {
 				yield State.ERROR; // Faults exist - handle errors
 			} else if( battery.checkCommunication() ){

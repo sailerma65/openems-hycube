@@ -11,6 +11,10 @@ import io.openems.edge.hycube.ess.statemachine.StateMachine.State;
  * <p>
  */
 public class GoRunningHandler extends StateHandler<State, Context> {
+	@Override
+	protected String debugLog() {
+		return State.GO_RUNNING.toString();
+	}
 
 	@Override
 	public State runAndGetNextState(Context context) throws OpenemsNamedException {

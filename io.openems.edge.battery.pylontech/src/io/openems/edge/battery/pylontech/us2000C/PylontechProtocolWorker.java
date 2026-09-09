@@ -12,22 +12,20 @@ import io.openems.edge.battery.pylontech.us2000C.com.PylontechSerialProtocol;
 import io.openems.edge.battery.pylontech.us2000C.com.SerialReadWrite;
 import io.openems.edge.battery.pylontech.us2000C.com.PylontechSerialProtocol.CMD_DESCRIPTORS;
 import io.openems.edge.battery.pylontech.us2000C.com.PylontechSerialProtocol.Frame;
-import io.openems.edge.battery.pylontech.us2000C.com.PylontechSerialProtocol.FrameTimeoutException;
-import io.openems.edge.battery.pylontech.us2000C.com.PylontechSerialProtocol.UnexpectedStartOfFrame;
-
+import java.lang.annotation.*;
 class PylontechProtocolWorker extends AbstractWorker{
 	
 	class FrameData
 	{
-		int m_address;
-		CMD_DESCRIPTORS m_cmd;
-		Frame m_frame;
+		int address;
+		CMD_DESCRIPTORS cmd;
+		Frame frame;
 		
-		FrameData( int i_address, CMD_DESCRIPTORS i_descr, Frame i_frame )
+		FrameData( int _address, CMD_DESCRIPTORS _descr, Frame _frame )
 		{
-			m_address = i_address;
-			m_cmd = i_descr;
-			m_frame = i_frame;
+			address = _address;
+			cmd = _descr;
+			frame = _frame;
 		}
 	}
 	
@@ -60,25 +58,25 @@ class PylontechProtocolWorker extends AbstractWorker{
 	
 	static class FrameKey
 	{
-		private int m_address;
-		private CMD_DESCRIPTORS m_cmd;
+		private int address;
+		private CMD_DESCRIPTORS cmd;
 
-		private FrameKey( int i_address, CMD_DESCRIPTORS i_descr )
+		private FrameKey( int _address, CMD_DESCRIPTORS _descr )
 		{
-			m_address = i_address;
-			m_cmd = i_descr;
+			address = _address;
+			cmd = _descr;
 		}
 
 		@Override
 		public int hashCode() {
-			return m_address + m_cmd.ordinal() << 8; 
+			return address + cmd.ordinal() << 8; 
 		}
 
 		@Override
 		public boolean equals(Object obj) {
 			if( obj instanceof FrameKey key )
 			{
-				return key.m_address == m_address && key.m_cmd == m_cmd;
+				return key.address == address && key.cmd == cmd;
 			}
 			return false;
 		}
@@ -86,57 +84,59 @@ class PylontechProtocolWorker extends AbstractWorker{
 		
 	}
 
-	private PylontechSerialProtocol wrkPylontechAdapter;
+	private PylontechSerialProtocol pylontechAdapter;
 
 	// sync
-	private PYLONTECH_POLL_CYCLE wrkPylontechPollCycle = PYLONTECH_POLL_CYCLE.SCAN_SERIAL_NUMBER;
+	private PYLONTECH_POLL_CYCLE pylontechPollCycle = PYLONTECH_POLL_CYCLE.SCAN_SERIAL_NUMBER;
 	
-	private LinkedHashMap<FrameKey, FrameData> wrkReceivedFrames = new LinkedHashMap<>();
+	private LinkedHashMap<FrameKey, FrameData> receivedFrames = new LinkedHashMap<>();
 
 	// single thr.
-	private int wrkPollAddress;
+	private int pollAddress;
 	
 	// read
-	private int wrkPollMax;
+	private int pollMax;
 	
 	// single thr.
-	private PYLONTECH_COMM_DIR wrkCommDirection;
+	private PYLONTECH_COMM_DIR commDirection;
 	
 	private static final int PY_MAX_POLL_ERRORS = 4;
 
 	// single thr.
-	private int wrkPollErrorCount = 0;
+	private int pollErrorCount = 0;
 
-	private PYLONTECH_COMM_STATE wrkCommState = PYLONTECH_COMM_STATE.INACTIVE;
+	private PYLONTECH_COMM_STATE commState = PYLONTECH_COMM_STATE.INACTIVE;
 	
 	
-	private boolean wrkActivated = false;
+	private boolean activated = false;
 
-	private volatile boolean wrkCommunicationError;
+	private volatile boolean communicationError;
 	
-	private SerialReadWrite wrkSerialConnection;
+	private SerialReadWrite serialConnection;
+	
+	private int waitFailCountDown = 0;
 	
 	private final Logger log = LoggerFactory.getLogger(PylontechProtocolWorker.class);
 	
-	void setParallelDevices( int i_devices )
+	void setParallelDevices( int _devices )
 	{
-		wrkPollMax = PylontechUS2000CBatteryImpl.PY_START_ADDRESS + i_devices - 1;
+		pollMax = PylontechUS2000CBatteryImpl.PY_START_ADDRESS + _devices - 1;
 	}
 	
-	void setSerialInterface( SerialReadWrite connection )
+	void setSerialInterface( SerialReadWrite _connection )
 	{
-		wrkSerialConnection = connection;
-		wrkPylontechAdapter = new PylontechSerialProtocol(wrkSerialConnection);
+		serialConnection = _connection;
+		pylontechAdapter = new PylontechSerialProtocol(serialConnection);
 	}
 	
 	@Override
-	public void activate(String name, boolean initiallyTriggerNextRun) {
+	public void activate(String _name, boolean _initiallyTriggerNextRun) {
 		
-		super.activate(name, initiallyTriggerNextRun);
+		super.activate(_name, _initiallyTriggerNextRun);
 		
 		synchronized( this )
 		{
-		  wrkActivated = true;
+		  activated = true;
 		}
 	}
 	
@@ -146,90 +146,95 @@ class PylontechProtocolWorker extends AbstractWorker{
 	public void deactivate() {
 		synchronized( this )
 		{
-		  wrkActivated = false;
-		  wrkCommState = PYLONTECH_COMM_STATE.INACTIVE;
+		  activated = false;
+		  commState = PYLONTECH_COMM_STATE.INACTIVE;
 		}
 		super.deactivate();
 	}
 
 	public synchronized boolean isActivated()
 	{
-		return wrkActivated;
+		return activated;
 	}
 	
 	public synchronized boolean isRunning()
 	{
-		return isActivated() && wrkCommState == PYLONTECH_COMM_STATE.RUNNING;
+		return isActivated() && commState == PYLONTECH_COMM_STATE.RUNNING;
 	}
 	
 	public synchronized void startCommunication()
 	{
-		wrkPylontechAdapter.startWork();
+		pylontechAdapter.startWork();
 		
-		wrkCommunicationError = false;
+		communicationError = false;
 		
-		wrkCommState = PYLONTECH_COMM_STATE.INITIALIZING;
+		commState = PYLONTECH_COMM_STATE.INITIALIZING;
 		
-		wrkCommDirection = PYLONTECH_COMM_DIR.REQUEST;
+		commDirection = PYLONTECH_COMM_DIR.REQUEST;
 		
-		wrkPollAddress = PylontechUS2000CBatteryImpl.PY_START_ADDRESS;
+		pollAddress = PylontechUS2000CBatteryImpl.PY_START_ADDRESS;
 		
 		startNextCycle();
 	}
 	
 	public synchronized void startNextCycle()
 	{
-		if( wrkPylontechPollCycle == PYLONTECH_POLL_CYCLE.INACTIVE  && wrkCommState != PYLONTECH_COMM_STATE.INACTIVE )
+		if( pylontechPollCycle == PYLONTECH_POLL_CYCLE.INACTIVE  && commState != PYLONTECH_COMM_STATE.INACTIVE )
 		{
-			if( wrkCommState == PYLONTECH_COMM_STATE.INITIALIZING )
+			if( commState == PYLONTECH_COMM_STATE.INITIALIZING )
 			{
-				wrkPylontechPollCycle = PYLONTECH_POLL_CYCLE.SCAN_SERIAL_NUMBER;
+				pylontechPollCycle = PYLONTECH_POLL_CYCLE.SCAN_SERIAL_NUMBER;
 			}
 			else
 			{
-				wrkPylontechPollCycle = PYLONTECH_POLL_CYCLE.RUN_ANALOG_VALUES;
+				pylontechPollCycle = PYLONTECH_POLL_CYCLE.RUN_ANALOG_VALUES;
 			}
 		}
 	}
 	
 	@Override
 	protected void forever() throws Throwable {
-		if( !wrkSerialConnection.isStarted() )
+		if( waitFailCountDown > 0 && --waitFailCountDown > 0 )
+		{
+			return;
+		}
+		
+		if( !serialConnection.isStarted() )
 			return;
 		
 		PYLONTECH_POLL_CYCLE currentPollCycle;
 		
 		synchronized( this )
 		{
-			if( wrkPylontechPollCycle == PYLONTECH_POLL_CYCLE.INACTIVE )
+			if( pylontechPollCycle == PYLONTECH_POLL_CYCLE.INACTIVE )
 			{
 				return;
 			}
 
-		    currentPollCycle = wrkPylontechPollCycle;
+		    currentPollCycle = pylontechPollCycle;
 		}
 		
 		PYLONTECH_POLL_CYCLE nextPollCycle = null;
 		
-		if( wrkCommDirection == PYLONTECH_COMM_DIR.REQUEST )
+		if( commDirection == PYLONTECH_COMM_DIR.REQUEST )
 		{
-			wrkPylontechAdapter.clearReceiveBuffer();
-			wrkPylontechAdapter.sendCmdWithAddressInfo( wrkPollAddress, currentPollCycle.descriptor );
-			wrkCommDirection = PYLONTECH_COMM_DIR.RESPONSE;
+			pylontechAdapter.clearReceiveBuffer();
+			pylontechAdapter.sendCmdWithAddressInfo( pollAddress, currentPollCycle.descriptor );
+			commDirection = PYLONTECH_COMM_DIR.RESPONSE;
 		}
 		else
 		{
 			try
 			{
-				Frame receivedFrame = wrkPylontechAdapter.receiveOrWait();
+				Frame receivedFrame = pylontechAdapter.receiveOrWait();
 				
 				if( receivedFrame != null )
 				{
-					FrameKey key = new FrameKey( wrkPollAddress, currentPollCycle.descriptor );
-					FrameData data = new FrameData(wrkPollAddress, currentPollCycle.descriptor, receivedFrame );
+					FrameKey key = new FrameKey( pollAddress, currentPollCycle.descriptor );
+					FrameData data = new FrameData(pollAddress, currentPollCycle.descriptor, receivedFrame );
 					
-					synchronized (wrkReceivedFrames ) {
-						wrkReceivedFrames.put(key, data);
+					synchronized (receivedFrames ) {
+						receivedFrames.put(key, data);
 					}
 					
 					switch( currentPollCycle )
@@ -238,29 +243,29 @@ class PylontechProtocolWorker extends AbstractWorker{
 						 nextPollCycle = PYLONTECH_POLL_CYCLE.SCAN_MANUFACTURER_INFO;
 						break;
 					case SCAN_MANUFACTURER_INFO:
-				        if( wrkPollAddress < wrkPollMax )
+				        if( pollAddress < pollMax )
 				        {
-				        	wrkPollAddress++;
+				        	pollAddress++;
 				        	nextPollCycle = PYLONTECH_POLL_CYCLE.SCAN_SERIAL_NUMBER;
 				        }
 				        else
 				        {
 				        	nextPollCycle = PYLONTECH_POLL_CYCLE.RUN_ANALOG_VALUES;
-				        	wrkPollAddress = PylontechUS2000CBatteryImpl.PY_START_ADDRESS;
+				        	pollAddress = PylontechUS2000CBatteryImpl.PY_START_ADDRESS;
 				        	//m_valueCycles = PY_VALUE_CYCLES;
-				        	wrkPollErrorCount = 0;
+				        	pollErrorCount = 0;
 				        }
 				        break;
 					case RUN_ANALOG_VALUES:
 						// read values
 						
-						if( wrkPollAddress < wrkPollMax )
+						if( pollAddress < pollMax )
 						{
-							wrkPollAddress++;
+							pollAddress++;
 						}
 						else
 						{
-							wrkPollAddress = PylontechUS2000CBatteryImpl.PY_START_ADDRESS;
+							pollAddress = PylontechUS2000CBatteryImpl.PY_START_ADDRESS;
 							//m_valueCycles--;
 							
 							//if( m_valueCycles <= 0 )
@@ -272,32 +277,32 @@ class PylontechProtocolWorker extends AbstractWorker{
 					case RUN_CMD_GET_ALARM_INFO:
 						// read values
 						
-						if( wrkPollAddress < wrkPollMax )
+						if( pollAddress < pollMax )
 						{
-							wrkPollAddress++;
+							pollAddress++;
 						}
 						else
 						{
-							wrkPollAddress = PylontechUS2000CBatteryImpl.PY_START_ADDRESS;
+							pollAddress = PylontechUS2000CBatteryImpl.PY_START_ADDRESS;
 							nextPollCycle = PYLONTECH_POLL_CYCLE.RUN_CMD_GET_MANAGEMENT_INFO;
 						}
 				        break;
 					case RUN_CMD_GET_MANAGEMENT_INFO:
 						// read values
 						
-						if( wrkPollAddress < wrkPollMax )
+						if( pollAddress < pollMax )
 						{
-							wrkPollAddress++;
+							pollAddress++;
 						}
 						else
 						{
-							wrkPollAddress = PylontechUS2000CBatteryImpl.PY_START_ADDRESS;
+							pollAddress = PylontechUS2000CBatteryImpl.PY_START_ADDRESS;
 							nextPollCycle = PYLONTECH_POLL_CYCLE.INACTIVE;
 							
 							//m_valueCycles = PY_VALUE_CYCLES;
-							wrkPollErrorCount = 0;
+							pollErrorCount = 0;
 							
-							wrkCommState = PYLONTECH_COMM_STATE.RUNNING;
+							commState = PYLONTECH_COMM_STATE.RUNNING;
 						}
 				        break;
 					case INACTIVE:
@@ -305,23 +310,32 @@ class PylontechProtocolWorker extends AbstractWorker{
 						break;
 						
 					}
-					wrkCommDirection = PYLONTECH_COMM_DIR.REQUEST;
+					commDirection = PYLONTECH_COMM_DIR.REQUEST;
 				}
 			}
-			catch( FrameTimeoutException | UnexpectedStartOfFrame | IOException ex )
+			catch( RuntimeException ex )
+			{
+				log.info( ex.getClass().getSimpleName() + " in state " + currentPollCycle, ex );
+
+				commDirection = PYLONTECH_COMM_DIR.REQUEST;
+
+				// pause for 4 thread cycles
+				waitFailCountDown = 4;
+			}
+			catch( IOException ex )
 			{
 				log.error( ex.getClass().getSimpleName() + " in state " + currentPollCycle, ex );
-				if( wrkPollErrorCount < PY_MAX_POLL_ERRORS )
+				if( pollErrorCount < PY_MAX_POLL_ERRORS )
 				{
-					wrkPollErrorCount++;
+					pollErrorCount++;
 				}
 				else
 				{
-					wrkPollErrorCount = 0;
+					pollErrorCount = 0;
 					
-					wrkCommunicationError = true;
+					communicationError = true;
 					
-					wrkSerialConnection.handleError("poll error", ex );
+					serialConnection.handleError("poll error", ex );
 					
 					nextPollCycle = PYLONTECH_POLL_CYCLE.INACTIVE;
 					
@@ -331,32 +345,32 @@ class PylontechProtocolWorker extends AbstractWorker{
 				{
 				case SCAN_SERIAL_NUMBER:
 				case SCAN_MANUFACTURER_INFO:
-					wrkPollAddress = PylontechUS2000CBatteryImpl.PY_START_ADDRESS;
+					pollAddress = PylontechUS2000CBatteryImpl.PY_START_ADDRESS;
 					nextPollCycle = PYLONTECH_POLL_CYCLE.SCAN_SERIAL_NUMBER;
 					return;
 				default:
 					break;
 				}
-				wrkCommDirection = PYLONTECH_COMM_DIR.REQUEST;
+				commDirection = PYLONTECH_COMM_DIR.REQUEST;
 			}
 		}
 		
 		if( nextPollCycle != null )
 		{
 			synchronized (this) {
-				wrkPylontechPollCycle = nextPollCycle;
+				pylontechPollCycle = nextPollCycle;
 			}
 		}
 	}
 
 	public boolean hasCommunicationError()
 	{
-		return wrkCommunicationError;
+		return communicationError;
 	}
 	
 	public void quitCommunicationERror()
 	{
-		wrkCommunicationError = false;
+		communicationError = false;
 	}
 	
 	@Override
@@ -372,16 +386,16 @@ class PylontechProtocolWorker extends AbstractWorker{
 	
 	public synchronized FrameData getNextFrame()
 	{
-		if( wrkReceivedFrames.isEmpty() )
+		if( receivedFrames.isEmpty() )
 		{
 			return null;
 		}
 		
-		Entry<FrameKey, FrameData> entry = wrkReceivedFrames.firstEntry();
+		Entry<FrameKey, FrameData> entry = receivedFrames.firstEntry();
 		
 		FrameKey receivedKey = entry.getKey();
 
-		wrkReceivedFrames.remove(receivedKey);
+		receivedFrames.remove(receivedKey);
 
 		return entry.getValue();
 	}

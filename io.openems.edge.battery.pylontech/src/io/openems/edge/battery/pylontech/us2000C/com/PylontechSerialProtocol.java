@@ -6,9 +6,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Objects;
 import java.util.logging.Logger;
-
-import com.fazecast.jSerialComm.SerialPort;
-
 /**
  * PYLONTECH serial communication protocol
  * 
@@ -60,7 +57,7 @@ public class PylontechSerialProtocol {
 	}
 
 	public void startWork() {
-		connection.setComPortTimeouts(SerialPort.TIMEOUT_NONBLOCKING, 0, 0);
+		connection.ensurePortIsOpen();
 
 	}
 

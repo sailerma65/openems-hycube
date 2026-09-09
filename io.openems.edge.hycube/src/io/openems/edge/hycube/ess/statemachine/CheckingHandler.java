@@ -21,6 +21,11 @@ import io.openems.edge.hycube.ess.statemachine.StateMachine.State;
 
 public class CheckingHandler extends StateHandler<State, Context> {
 
+	@Override
+	protected String debugLog() {
+		return State.CHECKING.toString();
+	}
+
 	private boolean checkValidReadChannels( HycubeEssImpl ess )
 	{
 		InitValidation[] channelList = ess.getInitChannelList();
