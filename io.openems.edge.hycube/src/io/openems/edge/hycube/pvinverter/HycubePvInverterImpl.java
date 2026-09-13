@@ -1,8 +1,10 @@
 package io.openems.edge.hycube.pvinverter;
 
 import static io.openems.edge.common.event.EdgeEventConstants.TOPIC_CYCLE_AFTER_PROCESS_IMAGE;
+import static io.openems.edge.common.event.EdgeEventConstants.TOPIC_CYCLE_BEFORE_CONTROLLERS;
 import static io.openems.edge.common.event.EdgeEventConstants.TOPIC_CYCLE_BEFORE_PROCESS_IMAGE;
 import static org.osgi.service.component.annotations.ConfigurationPolicy.REQUIRE;
+import static org.osgi.service.component.annotations.ReferenceCardinality.MANDATORY;
 import static org.osgi.service.component.annotations.ReferenceCardinality.OPTIONAL;
 import static org.osgi.service.component.annotations.ReferencePolicy.STATIC;
 import static org.osgi.service.component.annotations.ReferencePolicyOption.GREEDY;
@@ -33,11 +35,15 @@ import io.openems.edge.common.component.ComponentManager;
 import io.openems.edge.common.component.OpenemsComponent;
 import io.openems.edge.common.type.Phase.SinglePhase;
 import io.openems.edge.ess.api.ManagedSymmetricEss;
+import io.openems.edge.ess.api.SymmetricEss;
 import io.openems.edge.hycube.ess.HycubeEss;
 import io.openems.edge.hycube.ess.HycubeEssImpl;
 import io.openems.edge.meter.api.ElectricityMeter;
 import io.openems.edge.meter.api.SinglePhaseMeter;
 import io.openems.edge.pvinverter.api.ManagedSymmetricPvInverter;
+import io.openems.edge.timedata.api.Timedata;
+import io.openems.edge.timedata.api.TimedataProvider;
+import io.openems.edge.timedata.api.utils.CalculateEnergyFromPower;
 
 /**
  * Implementation of the Hycube PV Inverter component.
@@ -60,15 +66,19 @@ import io.openems.edge.pvinverter.api.ManagedSymmetricPvInverter;
 ) //
 @EventTopics({ //
 		TOPIC_CYCLE_BEFORE_PROCESS_IMAGE, //
+		TOPIC_CYCLE_BEFORE_CONTROLLERS, //
 		TOPIC_CYCLE_AFTER_PROCESS_IMAGE //
 })
 public class HycubePvInverterImpl extends AbstractOpenemsComponent implements HycubePvInverter,
-		ManagedSymmetricPvInverter,  EventHandler, ElectricityMeter, OpenemsComponent, SinglePhaseMeter {
+		ManagedSymmetricPvInverter,  EventHandler, ElectricityMeter, OpenemsComponent, SinglePhaseMeter, TimedataProvider {
 
 	private final Logger log = LoggerFactory.getLogger(HycubePvInverterImpl.class);
 
 	@Reference
 	protected ComponentManager componentManager;
+
+	@Reference(policy = STATIC, policyOption = GREEDY, cardinality = MANDATORY)
+	private volatile Timedata timedata = null;
 
 	@Reference
 	protected ConfigurationAdmin cm;
@@ -77,6 +87,10 @@ public class HycubePvInverterImpl extends AbstractOpenemsComponent implements Hy
 //	private Power power;
 
 	protected Config config;
+
+	private final CalculateEnergyFromPower calculateSolarEnergy = new CalculateEnergyFromPower(this,
+			ElectricityMeter.ChannelId.ACTIVE_PRODUCTION_ENERGY );
+
 
 	public static final int BATTERY_VOLTAGE = 48; // for capacity calculation we cannot use current voltage
 
@@ -207,10 +221,44 @@ public class HycubePvInverterImpl extends AbstractOpenemsComponent implements Hy
 	}
 
 	@Override
-	public void handleEvent(Event event) {
-		// TODO Auto-generated method stub
-		
+	public Timedata getTimedata() {
+		return this.timedata;
 	}
+
+
+	@Override
+	public void handleEvent(Event event) {
+		if (!this.isEnabled()) {
+			return;
+		}
+		switch (event.getTopic()) {
+		case TOPIC_CYCLE_BEFORE_CONTROLLERS -> {
+	//		this._setMyActivePower();
+	 		this.calculateEnergy();
+		}
+		}
+	}
+	
+	/**
+	 * Calculate the Energy values for AC-side.
+	 *
+	 * <p>
+	 * Negative values for Charge; positive for Discharge.
+	 */
+	private void calculateEnergy() {
+
+		var solarPower = hyEss.getSumSolarPowerChannel().value().get();
+		if (solarPower == null) {
+			// Not available
+			this.calculateSolarEnergy.update(null);
+		} else if (solarPower > 0) {
+			// Discharge
+			this.calculateSolarEnergy.update(solarPower);
+		} 
+
+	}
+
+
 
 	/**
 	 * Adds a Copy-Listener. It listens on setNextValue() and copies the value to
