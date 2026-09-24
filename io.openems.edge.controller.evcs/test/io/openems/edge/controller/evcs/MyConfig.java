@@ -11,6 +11,7 @@ public class MyConfig extends AbstractComponentConfig implements Config {
 		private boolean enabled = true;
 		private boolean debugMode = false;
 		private String evcsId = "evcs0";
+		private String essId = "ess0";
 		private boolean enabledCharging = true;
 		private ChargeMode chargeMode = ChargeMode.FORCE_CHARGE;
 		private int forceChargeMinPower = 7560;
@@ -19,6 +20,9 @@ public class MyConfig extends AbstractComponentConfig implements Config {
 		private int energySessionLimit = 0;
 		private int excessChargeHystersis = 120;
 		private int excessChargePauseHysteresis = 30;
+		private int minExcessPower = 2500;
+		private int minSOC = 75;
+		private boolean forbidDischarge = false;
 
 		private Builder() {
 		}
@@ -86,6 +90,24 @@ public class MyConfig extends AbstractComponentConfig implements Config {
 		public MyConfig build() {
 			return new MyConfig(this);
 		}
+
+		public void setMinExcessPower(int minExcessPower) {
+			this.minExcessPower = minExcessPower;
+		}
+
+		public void setMinSOC(int minSOC) {
+			this.minSOC = minSOC;
+		}
+
+		public void setForbidDischarge(boolean discharge) {
+			this.forbidDischarge = discharge;
+		}
+		
+		public void setEss_id( String ess_id )
+		{
+			this.essId = ess_id;
+		}
+		
 	}
 
 	/**
@@ -157,5 +179,25 @@ public class MyConfig extends AbstractComponentConfig implements Config {
 	@Override
 	public int excessChargePauseHysteresis() {
 		return this.builder.excessChargePauseHysteresis;
+	}
+
+	@Override
+	public int minExcessPower() {
+		return this.builder.minExcessPower;
+	}
+
+	@Override
+	public int minSOC() {
+		return this.builder.minSOC;
+	}
+	
+	@Override
+	public boolean forbidDischarge() {
+		return this.builder.forbidDischarge;
+	}
+
+	@Override
+	public String ess_id() {
+		return this.builder.essId;
 	}
 }

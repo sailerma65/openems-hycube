@@ -16,9 +16,6 @@ public @interface Config {
 	@AttributeDefinition(name = "Alias", description = "Human-readable name of this Component; defaults to Component-ID")
 	String alias() default "Hycube PV Inverter";
 
-	@AttributeDefinition(name = "Phase", description = "true, if three Inverters are configured for master-slave symmetric mode")
-	SingleOrAllPhase phase() default SingleOrAllPhase.L1;
-
 	@AttributeDefinition(name = "Is enabled?", description = "Is this Component enabled?")
 	boolean enabled() default true;
 

@@ -24,10 +24,10 @@ public @interface Config {
 	SingleOrAllPhase phase() default SingleOrAllPhase.L1;
 
 	@AttributeDefinition(name = "Modbus-ID", description = "ID of Modbus bridge.")
-	String modbus_id() default "modbus0";
+	String modbus_id() default "modbus1";
 
 	@AttributeDefinition(name = "Modbus Unit-ID", description = "The Unit-ID of the Modbus device.")
-	int modbusUnitId() default 227;
+	int modbusUnitId() default 1;
 
 	@AttributeDefinition(name = "Debug", description = "Enable debug mode?")
 	boolean debugMode() default false;

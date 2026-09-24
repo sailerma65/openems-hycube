@@ -19,6 +19,8 @@ import org.osgi.service.component.annotations.Component;
 import org.osgi.service.component.annotations.ConfigurationPolicy;
 import org.osgi.service.component.annotations.Deactivate;
 import org.osgi.service.component.annotations.Reference;
+import org.osgi.service.component.annotations.ReferenceCardinality;
+import org.osgi.service.component.annotations.ReferencePolicy;
 import org.osgi.service.metatype.annotations.Designate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -33,6 +35,7 @@ import io.openems.edge.common.modbusslave.ModbusSlave;
 import io.openems.edge.common.modbusslave.ModbusSlaveTable;
 import io.openems.edge.common.sum.Sum;
 import io.openems.edge.controller.api.Controller;
+import io.openems.edge.ess.api.ManagedSymmetricEss;
 import io.openems.edge.evcs.api.ChargeMode;
 import io.openems.edge.evcs.api.ChargeState;
 import io.openems.edge.evcs.api.ManagedEvcs;
@@ -43,7 +46,7 @@ import io.openems.edge.evcs.api.ManagedEvcs;
 		immediate = true, //
 		configurationPolicy = ConfigurationPolicy.REQUIRE //
 )
-@GenerateTargetsFromReferences("evcs")
+@GenerateTargetsFromReferences({"evcs", "ess"})
 public class ControllerEvcsImpl extends AbstractOpenemsComponent
 		implements Controller, ControllerEvcs, OpenemsComponent, ModbusSlave {
 
@@ -72,6 +75,10 @@ public class ControllerEvcsImpl extends AbstractOpenemsComponent
 	@Reference(policy = STATIC, policyOption = GREEDY, cardinality = MANDATORY, //
 			target = "(&(id=${config.evcs_id})(enabled=true))")
 	private ManagedEvcs evcs;
+
+	@Reference(policy = ReferencePolicy.DYNAMIC, policyOption = GREEDY, cardinality = ReferenceCardinality.OPTIONAL, //
+			target = "(&(id=${config.ess_id})(enabled=true))")
+	private volatile ManagedSymmetricEss ess;
 
 	private Config config;
 
@@ -177,7 +184,9 @@ public class ControllerEvcsImpl extends AbstractOpenemsComponent
 				: switch (chargeMode) {
 				case EXCESS_POWER -> //
 					switch (priority) {
-					case CAR -> calculateChargePowerFromExcessPower(this.sum, this.evcs);
+					case CAR -> { 
+						yield calculateChargePowerFromExcessPower(this.sum, this.evcs); 
+					}
 					case STORAGE -> {
 						// SoC > 97 % or always, when there is no ESS is available
 						if (this.sum.getEssSoc().orElse(100) > 97) {
@@ -187,13 +196,40 @@ public class ControllerEvcsImpl extends AbstractOpenemsComponent
 						}
 					}
 					};
-				case FORCE_CHARGE -> forceChargePower;
+				case MIX_POWER -> {
+					int excPower = calculateChargePowerFromExcessPower(this.sum, this.evcs); 
+
+					if( excPower < forceChargePower &&  
+						excPower >= config.minExcessPower() && this.sum.getEssSoc().orElse(100) >= config.minSOC() )
+					{
+						yield forceChargePower;
+					}
+					yield 0;
+					
+				}
+				case FORCE_CHARGE -> {
+					if( config.forbidDischarge() && ess != null )
+					{
+						int gridPower = sum.getGridActivePower().orElse(0);
+						int evcsCharge = evcs.getActivePower().orElse(0);
+
+						int essLimit = gridPower - evcsCharge;
+						
+						if( essLimit < 0 )
+						{
+							essLimit = 0;
+						}
+						
+						this.ess.setActivePowerLessOrEquals(essLimit);
+					}
+					yield forceChargePower;
+				}
 				};
 
 		var nextMinPower = chargeMode == null //
 				? 0 //
 				: switch (chargeMode) {
-				case EXCESS_POWER -> defaultChargeMinPower;
+				case EXCESS_POWER, MIX_POWER -> defaultChargeMinPower;
 				case FORCE_CHARGE -> 0;
 				};
 		this.evcs._setMinimumPower(nextMinPower);

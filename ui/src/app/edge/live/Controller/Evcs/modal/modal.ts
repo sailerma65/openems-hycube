@@ -12,7 +12,7 @@ import { FormUtils } from "src/app/shared/utils/form/form.utils";
 import { AdministrationComponent } from "../administration/administration.component";
 import { PopoverComponent } from "../popover/popover";
 
-type ChargeMode = "FORCE_CHARGE" | "EXCESS_POWER";
+type ChargeMode = "FORCE_CHARGE" | "EXCESS_POWER" | "MIX_POWER";
 @Component({
     selector: "oe-controller-evcs-modal",
     templateUrl: "./modal.html",
@@ -239,6 +239,16 @@ export class ModalComponent extends AbstractModal {
             "defaultChargeMinPower",
         ) as FormControl;
 
+        const minExcessPowerCtrl = FormUtils.findFormControlSafely(
+            this.formGroup as FormGroup,
+            "minExcessPower",
+        ) as FormControl;
+        const minSOCCtrl = FormUtils.findFormControlSafely(this.formGroup as FormGroup, "minSOC") as FormControl;
+        const forbidDischargeCtrl = FormUtils.findFormControlSafely(
+            this.formGroup as FormGroup,
+            "forbidDischarge",
+        ) as FormControl;
+
         if (
             energyLimitCtrl == null ||
             energySessionLimitCtrl == null ||
@@ -246,7 +256,10 @@ export class ModalComponent extends AbstractModal {
             chargeModeCtrl == null ||
             enabledChargingCtrl == null ||
             minGuaranteeCtrl == null ||
-            defaultChargeMinPowerCtrl == null
+            defaultChargeMinPowerCtrl == null ||
+            minExcessPowerCtrl == null ||
+            minSOCCtrl == null ||
+            forbidDischargeCtrl == null
         ) {
             return;
         }
@@ -316,6 +329,9 @@ export class ModalComponent extends AbstractModal {
             // EnergySessionLimit as kWh value, for ion-range
             energySessionLimitKwh: new FormControl(Math.round(this.controller?.properties.energySessionLimit / 1000)),
             enabledCharging: new FormControl(this.isChargingEnabled),
+            minExcessPower: new FormControl(this.controller?.properties.minExcessPower),
+            minSOC: new FormControl(this.controller?.properties.minSOC),
+            forbidDischarge: new FormControl(this.controller?.properties.forbidDischarge),
         });
     }
 

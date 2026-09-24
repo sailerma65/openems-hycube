@@ -5,7 +5,6 @@ import static io.openems.edge.common.event.EdgeEventConstants.TOPIC_CYCLE_BEFORE
 import static io.openems.edge.common.event.EdgeEventConstants.TOPIC_CYCLE_BEFORE_PROCESS_IMAGE;
 import static org.osgi.service.component.annotations.ConfigurationPolicy.REQUIRE;
 import static org.osgi.service.component.annotations.ReferenceCardinality.MANDATORY;
-import static org.osgi.service.component.annotations.ReferenceCardinality.OPTIONAL;
 import static org.osgi.service.component.annotations.ReferencePolicy.STATIC;
 import static org.osgi.service.component.annotations.ReferencePolicyOption.GREEDY;
 
@@ -35,7 +34,6 @@ import io.openems.edge.common.component.ComponentManager;
 import io.openems.edge.common.component.OpenemsComponent;
 import io.openems.edge.common.type.Phase.SinglePhase;
 import io.openems.edge.ess.api.ManagedSymmetricEss;
-import io.openems.edge.ess.api.SymmetricEss;
 import io.openems.edge.hycube.ess.HycubeEss;
 import io.openems.edge.hycube.ess.HycubeEssImpl;
 import io.openems.edge.meter.api.ElectricityMeter;
@@ -83,16 +81,10 @@ public class HycubePvInverterImpl extends AbstractOpenemsComponent implements Hy
 	@Reference
 	protected ConfigurationAdmin cm;
 
-//	@Reference
-//	private Power power;
-
 	protected Config config;
 
 	private final CalculateEnergyFromPower calculateSolarEnergy = new CalculateEnergyFromPower(this,
 			ElectricityMeter.ChannelId.ACTIVE_PRODUCTION_ENERGY );
-
-
-	public static final int BATTERY_VOLTAGE = 48; // for capacity calculation we cannot use current voltage
 
 	public HycubePvInverterImpl() throws OpenemsNamedException {
 		super(//
@@ -103,10 +95,12 @@ public class HycubePvInverterImpl extends AbstractOpenemsComponent implements Hy
 		);
 	}
 
-	@Reference(policy = STATIC, policyOption = GREEDY, cardinality = OPTIONAL)
+	@Reference(policy = STATIC, policyOption = GREEDY, cardinality = MANDATORY)
 	private ManagedSymmetricEss ess;
 	
 	private HycubeEssImpl hyEss;
+	
+	private SinglePhase phase;
 	
 	@Activate
 	protected void activate(ComponentContext context, Config config) throws OpenemsNamedException {
@@ -132,25 +126,19 @@ public class HycubePvInverterImpl extends AbstractOpenemsComponent implements Hy
 		io.openems.edge.common.channel.ChannelId meterPowerOtherB;
 		io.openems.edge.common.channel.ChannelId meterPowerChannel;
 		
-		io.openems.edge.common.channel.ChannelId meterCurrentOtherA;
-		io.openems.edge.common.channel.ChannelId meterCurrentOtherB;
-		io.openems.edge.common.channel.ChannelId meterCurrentChannel;
-		
 		io.openems.edge.common.channel.ChannelId meterVoltageOtherA;
 		io.openems.edge.common.channel.ChannelId meterVoltageOtherB;
 		io.openems.edge.common.channel.ChannelId meterVoltageChannel;
 
 		IntegerReadChannel voltageHycubeChannel;
 
-		switch (config.phase()) {
+		phase = hyEss.getPhase();
+		
+		switch (phase) {
 		case L1 -> {
 			meterPowerChannel = ElectricityMeter.ChannelId.ACTIVE_POWER_L1;
 			meterPowerOtherA = ElectricityMeter.ChannelId.ACTIVE_POWER_L2;
 			meterPowerOtherB = ElectricityMeter.ChannelId.ACTIVE_POWER_L3;
-
-			meterCurrentChannel = ElectricityMeter.ChannelId.CURRENT_L1;
-			meterCurrentOtherA = ElectricityMeter.ChannelId.CURRENT_L2;
-			meterCurrentOtherB = ElectricityMeter.ChannelId.CURRENT_L3;
 
 			meterVoltageChannel = ElectricityMeter.ChannelId.VOLTAGE_L1;
 			meterVoltageOtherA = ElectricityMeter.ChannelId.VOLTAGE_L2;
@@ -164,10 +152,6 @@ public class HycubePvInverterImpl extends AbstractOpenemsComponent implements Hy
 			meterPowerOtherA = ElectricityMeter.ChannelId.ACTIVE_POWER_L1;
 			meterPowerOtherB = ElectricityMeter.ChannelId.ACTIVE_POWER_L3;
 
-			meterCurrentChannel = ElectricityMeter.ChannelId.CURRENT_L2;
-			meterCurrentOtherA = ElectricityMeter.ChannelId.CURRENT_L1;
-			meterCurrentOtherB = ElectricityMeter.ChannelId.CURRENT_L3;
-
 			meterVoltageChannel = ElectricityMeter.ChannelId.VOLTAGE_L2;
 			meterVoltageOtherA = ElectricityMeter.ChannelId.VOLTAGE_L1;
 			meterVoltageOtherB = ElectricityMeter.ChannelId.VOLTAGE_L3;
@@ -179,10 +163,6 @@ public class HycubePvInverterImpl extends AbstractOpenemsComponent implements Hy
 			meterPowerChannel = ElectricityMeter.ChannelId.ACTIVE_POWER_L3;
 			meterPowerOtherA = ElectricityMeter.ChannelId.ACTIVE_POWER_L1;
 			meterPowerOtherB = ElectricityMeter.ChannelId.ACTIVE_POWER_L2;
-
-			meterCurrentChannel = ElectricityMeter.ChannelId.CURRENT_L3;
-			meterCurrentOtherA = ElectricityMeter.ChannelId.CURRENT_L1;
-			meterCurrentOtherB = ElectricityMeter.ChannelId.CURRENT_L2;
 
 			meterVoltageChannel = ElectricityMeter.ChannelId.VOLTAGE_L3;
 			meterVoltageOtherA = ElectricityMeter.ChannelId.VOLTAGE_L1;
@@ -207,9 +187,9 @@ public class HycubePvInverterImpl extends AbstractOpenemsComponent implements Hy
 		this.channel(  meterPowerOtherA ).setNextValue( Integer.valueOf( 0 ) );
 		this.channel(  meterPowerOtherB ).setNextValue( Integer.valueOf( 0 ) );
 		
-		this.channel(  meterCurrentChannel ).setNextValue( Integer.valueOf( 0 ) );
-		this.channel(  meterCurrentOtherA ).setNextValue( Integer.valueOf( 0 ) );
-		this.channel(  meterCurrentOtherB ).setNextValue( Integer.valueOf( 0 ) );
+		this.channel(  ElectricityMeter.ChannelId.CURRENT_L1 ).setNextValue( Integer.valueOf( 0 ) );
+		this.channel(  ElectricityMeter.ChannelId.CURRENT_L2 ).setNextValue( Integer.valueOf( 0 ) );
+		this.channel(  ElectricityMeter.ChannelId.CURRENT_L3 ).setNextValue( Integer.valueOf( 0 ) );
 
 		this.channel(  meterVoltageOtherA ).setNextValue( Integer.valueOf( 0 ) );
 		this.channel(  meterVoltageOtherB ).setNextValue( Integer.valueOf( 0 ) );
@@ -292,11 +272,6 @@ public class HycubePvInverterImpl extends AbstractOpenemsComponent implements Hy
 		super.deactivate();
 	}
 
-	@Override
-	public String debugLog() {
-		return "";
-	}
-
 	/**
 	 * Uses Info Log for further debug features.
 	 */
@@ -309,13 +284,11 @@ public class HycubePvInverterImpl extends AbstractOpenemsComponent implements Hy
 
 	@Override
 	public SinglePhase getPhase() {
-		// TODO Auto-generated method stub
-		return null;
+		return phase;
 	}
 
 	@Override
 	public MeterType getMeterType() {
-		// TODO Auto-generated method stub
 		return HycubePvInverter.super.getMeterType();
 	}
 

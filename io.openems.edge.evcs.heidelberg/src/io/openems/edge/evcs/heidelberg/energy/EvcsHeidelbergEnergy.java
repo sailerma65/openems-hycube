@@ -27,7 +27,6 @@ public interface EvcsHeidelbergEnergy extends ManagedEvcs, ElectricityMeter, Ope
 		 */
 		HEIDELBERG_STATE(Doc.of(OpenemsType.INTEGER)), //
 		EXTERNAL_LOCK_STATE(Doc.of(OpenemsType.INTEGER)), //
-		
 		WATCHDOG_TIME(Doc.of(OpenemsType.INTEGER) //
 				.accessMode(AccessMode.READ_WRITE)), //
 		STANDBY(Doc.of(OpenemsType.INTEGER) //
@@ -37,8 +36,10 @@ public interface EvcsHeidelbergEnergy extends ManagedEvcs, ElectricityMeter, Ope
 		FAILSAFE_CURRENT(Doc.of(OpenemsType.INTEGER) //
 				.accessMode(AccessMode.READ_WRITE).unit(Unit.DEZIAMPERE)),//
 		TEMPERATURE_PCB(Doc.of(OpenemsType.INTEGER) //
-						.unit(Unit.DEZIDEGREE_CELSIUS) //
-		);
+						.unit(Unit.DEZIDEGREE_CELSIUS)),//
+		ENERGY_SINCE_POWER_ON(Doc.of(OpenemsType.LONG) //
+								.unit(Unit.CUMULATED_WATT_HOURS))
+		;
 
 		private final Doc doc;
 

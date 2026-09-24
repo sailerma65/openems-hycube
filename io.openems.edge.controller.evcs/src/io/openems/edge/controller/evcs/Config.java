@@ -25,6 +25,9 @@ import io.openems.edge.evcs.api.ChargeMode;
 	@AttributeDefinition(name = "Evcs-ID", description = "ID of Evcs device (Has to be managed).", required = true)
 	String evcs_id() default "evcs0";
 
+	@AttributeDefinition(name = "ESS-ID", description = "ID of ESS device (Has to be managed).", required = true)
+	String ess_id() default "ess0";
+
 	@AttributeDefinition(name = "Enabled charging", description = "Activates or deactivates the Charging.")
 	boolean enabledCharging() default true;
 
@@ -39,6 +42,15 @@ import io.openems.edge.evcs.api.ChargeMode;
 
 	@AttributeDefinition(name = "Priority of charging", description = "Decide which Component should be preferred.")
 	Priority priority() default Priority.CAR;
+
+	@AttributeDefinition(name = "Minimum excess power", description = "Minimal excess power required for loading with additional power.")
+	int minExcessPower() default 2500;
+
+	@AttributeDefinition(name = "Minimum SOC required", description = "Minimal SOC required for loading with additional power.")
+	int minSOC() default 75;
+	
+	@AttributeDefinition(name = "Forbid battery discharge", description = "Discharging battery is forbidden, power from grid is used.")
+	boolean forbidDischarge() default false;
 
 	@AttributeDefinition(name = "Energy limit in this session in [Wh]", description = "Set the Energylimit in this Session in Wh. The charging station will only charge till this limit; '0' is no limit.")
 	int energySessionLimit() default 0;

@@ -4,7 +4,8 @@ import io.openems.common.types.OptionsEnum;
 
 public enum ChargeMode implements OptionsEnum {
 	FORCE_CHARGE(0, "Force-Charge"), //
-	EXCESS_POWER(1, "Use surplus power"); //
+	EXCESS_POWER(1, "Use surplus power"), //
+	MIX_POWER(2, "Power mix");
 
 	private final int value;
 	private final String name;

@@ -60,6 +60,7 @@ import io.openems.edge.common.sum.GridMode;
 import io.openems.edge.common.taskmanager.Priority;
 import io.openems.edge.common.type.Phase.SinglePhase;
 import io.openems.edge.ess.api.AsymmetricEss;
+import io.openems.edge.ess.api.HybridEss;
 import io.openems.edge.ess.api.ManagedAsymmetricEss;
 import io.openems.edge.ess.api.ManagedSinglePhaseEss;
 import io.openems.edge.ess.api.ManagedSymmetricEss;
@@ -755,6 +756,11 @@ public class HycubeEssImpl extends AbstractOpenemsModbusComponent
 
 		if (!this.operationalValuesOk) {
 			this.logWarn(this.log, "ESS is not ready for operation. Canceling ApplyPower(p1,q1)");
+			
+			if( !this.config.readOnlyMode() )
+			{
+				_setBatteryPowerTargetValue( 0 );
+			}
 			return;
 		}
 
@@ -764,6 +770,10 @@ public class HycubeEssImpl extends AbstractOpenemsModbusComponent
 
 		if (this.maxChargePowerLimit == null || this.maxDischargePowerLimit == null) {
 			this.logError(this.log, "power Limits not set.");
+			if( !this.config.readOnlyMode() )
+			{
+				_setBatteryPowerTargetValue( 0 );
+			}
 			return;
 		}
 
@@ -998,7 +1008,6 @@ public class HycubeEssImpl extends AbstractOpenemsModbusComponent
 		// this._setDcDischargePower(getActivePower().get());
 
 	}
-
 
 	@Override
 	public Timedata getTimedata() {
