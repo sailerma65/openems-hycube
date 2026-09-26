@@ -20,18 +20,12 @@ public class UndefinedHandler extends StateHandler<State, Context> {
 			State.UNDEFINED;
 
 		case START -> {
-			// force START
-			if( ess.needsInitialization() )
+			if( !ess.getModbusCommunicationFailed() )
 			{
-				yield State.CHECKING;
+				if( ess.setRemoteControl( false ) )
+					yield State.INIT_BATTERY;
 			}
-			if (ess.hasFaults()) {
-				// Has Faults -> error handling
-				yield State.ERROR;
-			} else {
-				// No Faults -> start
-				yield State.GO_RUNNING;
-			}
+			yield State.UNDEFINED;
 		}
 		case STOP ->
 			// force STOP

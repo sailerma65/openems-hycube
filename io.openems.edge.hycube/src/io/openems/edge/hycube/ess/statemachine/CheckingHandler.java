@@ -1,5 +1,8 @@
 package io.openems.edge.hycube.ess.statemachine;
 
+import java.time.Duration;
+import java.time.Instant;
+
 import io.openems.common.exceptions.OpenemsError.OpenemsNamedException;
 import io.openems.edge.common.channel.IntegerReadChannel;
 import io.openems.edge.common.channel.IntegerWriteChannel;
@@ -20,6 +23,16 @@ import io.openems.edge.hycube.ess.statemachine.StateMachine.State;
  */
 
 public class CheckingHandler extends StateHandler<State, Context> {
+
+	private Instant entryAt = Instant.MIN;
+	
+	private static final int WAIT_AFTER_CONNECT_BATTERY = 20;
+	
+	@Override
+	protected void onEntry(Context context) throws OpenemsNamedException {
+		this.entryAt = Instant.now();
+
+	}
 
 	@Override
 	protected String debugLog() {
@@ -63,6 +76,11 @@ public class CheckingHandler extends StateHandler<State, Context> {
 			return State.ERROR;
 		}
 		
+		if (Duration.between(this.entryAt, Instant.now()).getSeconds() > WAIT_AFTER_CONNECT_BATTERY )
+		{
+			return State.RUNNING;
+		}
+
 		if( checkValidReadChannels(ess))
 		{
 			// all channel values are valid:
@@ -79,40 +97,18 @@ public class CheckingHandler extends StateHandler<State, Context> {
 			
 			ess.resetInitChannelList();
 			
-			boolean initOk = true;
-			
-			InitValidation remoteControlValidation = null;
-			
 			for( InitValidation validation : ess.getInitChannelList() )
 			{
-				if( validation.getChannelId() == HycubeEss.ChannelId.INIT_REMOTE_CONTROL )
-				{
-					remoteControlValidation = validation;
-				}
-				
 				if( validation.isToBeChecked() )
 				{
 					IntegerReadChannel readChannel = ess.channel( validation.getChannelId() );
 					
 					if( !validation.check( readChannel.value().get() ) )
 					{
-						initOk = false;
 						break;
 					}
 				}
 			}
-			
-			if( initOk )
-			{
-				// all registers are set correctly -> nothing to do
-				return State.GO_RUNNING;
-			}
-
-			remoteControlValidation.validate(); // skip this element in InitializingHandler
-			
-			IntegerWriteChannel remoteControlChannel = ess.channel( remoteControlValidation.getChannelId() );
-			
-			remoteControlChannel.setNextWriteValue( 0x00FF );
 			
 			return State.INITIALIZING;
 		}

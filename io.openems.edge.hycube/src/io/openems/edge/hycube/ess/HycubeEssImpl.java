@@ -148,7 +148,6 @@ public class HycubeEssImpl extends AbstractOpenemsModbusComponent
 			new InitValidation( HycubeEss.ChannelId.DSP_VERSION ),	// 0x4024
 			new InitValidation( HycubeEss.ChannelId.INIT_PCU_CONTROL, 2 ), // 0x3501
 			new InitValidation( HycubeEss.ChannelId.SERIAL_NUMBER ), // 0x5301
-			new InitValidation( HycubeEss.ChannelId.INIT_REMOTE_CONTROL, 0xFF00 ), // 0x4100
 			new InitValidation( HycubeEss.ChannelId.INIT_EPS_ERROR_CLEAR_MODE, 0x00EE ), // 0x4078
 			new InitValidation( HycubeEss.ChannelId.INIT_RESET_BMS_ERRORS, 0 ), // 0x407B
 			new InitValidation( HycubeEss.ChannelId.STATUS_WORD_4046 ), // 0x4046
@@ -390,15 +389,25 @@ public class HycubeEssImpl extends AbstractOpenemsModbusComponent
 	{
 		if( recentSetMaxChargeCurrentValue == null || recentSetMaxChargeCurrentValue != i_current )
 		{
+			int current = i_current;
+			
 			IntegerWriteChannel channel = this.channel( HycubeEss.ChannelId.SET_MAX_CHARGE_CURRENT );
+
+			if( this.stateMachine.getCurrentState() == State.RUNNING )
+			{
+				recentSetMaxChargeCurrentValue = current;
+			}
+			else
+			{
+				current = 0;
+			}
 			
 			try {
-				channel.setNextWriteValue(  i_current );
-				channel.setNextValue(  i_current );
+				channel.setNextWriteValue(  current );
+				channel.setNextValue(  current );
 			} catch (OpenemsNamedException e) {
 				logError( this.log, "Error writing SET_MAX_CHARGE_CURRENT" + e.getMessage() );
 			}
-			recentSetMaxChargeCurrentValue = i_current;
 		}
 
 	}
@@ -407,15 +416,25 @@ public class HycubeEssImpl extends AbstractOpenemsModbusComponent
 	{
 		if( recentSetMaxDischargeCurrentValue == null || recentSetMaxDischargeCurrentValue != i_current )
 		{
+			int current = i_current;
+			
 			IntegerWriteChannel channel = this.channel( HycubeEss.ChannelId.SET_MAX_DISCHARGE_CURRENT );
 			
+			if( this.stateMachine.getCurrentState() == State.RUNNING )
+			{
+				recentSetMaxDischargeCurrentValue = current;
+			}
+			else
+			{
+				current = 0;
+			}
+			
 			try {
-				channel.setNextWriteValue(  i_current );
-				channel.setNextValue(  i_current );
+				channel.setNextWriteValue(  current );
+				channel.setNextValue(  current );
 			} catch (OpenemsNamedException e) {
 				logError( this.log, "Error writing SET_MAX_DISCHARGE_CURRENT" + e.getMessage() );
 			}
-			recentSetMaxDischargeCurrentValue = i_current;
 		}
 
 	}
@@ -1217,6 +1236,25 @@ public class HycubeEssImpl extends AbstractOpenemsModbusComponent
 						.build());
 	}
 
+	public boolean setRemoteControl( boolean onOff )
+	{
+		IntegerWriteChannel wrChannel = this.channel(HycubeEss.ChannelId.INIT_REMOTE_CONTROL );
+		
+		try
+		{
+			int value = onOff ? 0xFF00 : 0x00FF;
+		
+			wrChannel.setNextWriteValue( value );
+			wrChannel.setNextValue(value);
+			return true;
+		}
+		catch( Exception ex )
+		{
+			logError( log , ex.getMessage() );
+			return false;
+		}
+	}
+
 	@Override
 	public void _setBatteryPowerTargetValue(int power) throws OpenemsNamedException {
 		
@@ -1266,15 +1304,39 @@ public class HycubeEssImpl extends AbstractOpenemsModbusComponent
 			doSetChannelsAfterInit = true;
 		}
 		
+		setMaxChargeCurrent(0);
+		setMaxDishargeCurrent(0);
+		
 		recentSetPowerTargetValue = null;
 		recentSetMaxChargeCurrentValue = null;
 		recentSetMaxDischargeCurrentValue = null;
 		recentSetMaxChargeVoltageValue = null;
 		recentSetMinDischargeVoltageValue = null;
 		
-		// switches on the CBi RAU (Remote actuator unit with lockout)
-
+		logDebug( log, "Initialization done" );
+	}
+	
+	public void connectBattery()
+	{
+		logDebug( log, "switch Remote Acces Unit on" );
 		digOutBoard.digitalOutputChannels()[ config.io_battery_pin() ].setNextValue( Boolean.TRUE );
+	}
+	
+	public void stopOperation()
+	{
+		logDebug( log, "stop operation: stop charging/discharging, switch RAU off" );
+		try
+		{
+			_setBatteryPowerTargetValue(0);
+			setMaxChargeCurrent(0);
+			setMaxDishargeCurrent(0);
+		}
+		catch( Exception ex )
+		{
+			logError( log, "_setBatteryPowerTargetValue failed" );
+		}
+		
+		digOutBoard.digitalOutputChannels()[ config.io_battery_pin() ].setNextValue( Boolean.FALSE );
 	}
 	
 	private void seSetInitChannelValues()

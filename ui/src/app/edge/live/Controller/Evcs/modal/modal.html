@@ -82,7 +82,6 @@
               </table>
             }
           </ng-container>
-          <oe-modal-horizontal-line></oe-modal-horizontal-line>
         }
         <!--Excess Power settings-->
         @if (formGroup.value.chargeMode === "EXCESS_POWER") {
@@ -110,11 +109,15 @@
         @if (formGroup.value.chargeMode === "MIX_POWER") {
           <oe-modal-line [name]="'Min. Überschuss'" [formGroup]="formGroup" [component]="controller" [value]="formGroup.value['minExcessPower']" [converter]="Utils.CONVERT_TO_WATT"></oe-modal-line>
           <oe-modal-line [formGroup]="formGroup" controlName="minExcessPower" [control]="{ type: 'RANGE', properties: { tickMin: minChargePower * 0.5, tickMax: minChargePower, unit: 'W', step: 100, pinFormatter: WATT_PIN_FORMATTER } }" leftColumnWidth="30"></oe-modal-line>
+        }
 
-          <oe-modal-line [name]="'Min. SOC'" [formGroup]="formGroup" [component]="controller" [value]="formGroup.value['minSOC']" [converter]="Utils.CONVERT_TO_PERCENT"></oe-modal-line>
-          <oe-modal-line [formGroup]="formGroup" controlName="minSOC" [control]="{ type: 'RANGE', properties: { tickMin: 50, tickMax: 95, unit: '%', step: 1 } }" class="align_right" leftColumnWidth="30"></oe-modal-line>
-
+        @if (formGroup.value.chargeMode === "MIX_POWER" || formGroup.value.chargeMode === "FORCE_CHARGE") {
           <oe-modal-line [name]="'Batterieentladung verbieten'" [formGroup]="formGroup" [component]="controller" controlName="forbidDischarge" [control]="{ type: 'TOGGLE' }" class="align_right" leftColumnWidth="100"></oe-modal-line>
+
+          @if (formGroup.value.chargeMode === "MIX_POWER" && formGroup.value.forbidDischarge === false) {
+            <oe-modal-line [name]="'Min. SOC'" [formGroup]="formGroup" [component]="controller" [value]="formGroup.value['minSOC']" [converter]="Utils.CONVERT_TO_PERCENT"></oe-modal-line>
+            <oe-modal-line [formGroup]="formGroup" controlName="minSOC" [control]="{ type: 'RANGE', properties: { tickMin: 50, tickMax: 95, unit: '%', step: 1 } }" class="align_right" leftColumnWidth="30"></oe-modal-line>
+          }
 
           <oe-modal-horizontal-line></oe-modal-horizontal-line>
         }

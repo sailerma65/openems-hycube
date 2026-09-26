@@ -199,12 +199,35 @@ public class ControllerEvcsImpl extends AbstractOpenemsComponent
 				case MIX_POWER -> {
 					int excPower = calculateChargePowerFromExcessPower(this.sum, this.evcs); 
 
-					if( excPower < forceChargePower &&  
-						excPower >= config.minExcessPower() && this.sum.getEssSoc().orElse(100) >= config.minSOC() )
+					int result = excPower;
+					
+					if( excPower < forceChargePower )
 					{
-						yield forceChargePower;
+						if( excPower >= config.minExcessPower() && ( config.forbidDischarge() || this.sum.getEssSoc().orElse(100) >= config.minSOC() ) )
+						{
+							result = forceChargePower;
+						}
+						else
+						{
+							yield 0;
+						}
 					}
-					yield 0;
+					if( config.forbidDischarge() && ess != null )
+					{
+						int gridPower = sum.getGridActivePower().orElse(0);
+						int evcsCharge = evcs.getActivePower().orElse(0);
+
+						int essLimit = gridPower - evcsCharge;
+						
+						if( essLimit < 0 )
+						{
+							essLimit = 0;
+						}
+						
+						this.ess.setActivePowerLessOrEquals(essLimit);
+					}
+
+					yield result;
 					
 				}
 				case FORCE_CHARGE -> {

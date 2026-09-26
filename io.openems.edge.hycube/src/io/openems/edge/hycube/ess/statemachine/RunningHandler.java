@@ -19,6 +19,10 @@ public class RunningHandler extends StateHandler<State, Context> {
 	protected String debugLog() {
 		return State.RUNNING.toString();
 	}
+	
+	@Override
+	protected void onEntry(Context context) throws OpenemsNamedException {
+	}
 
 	@Override
 	public State runAndGetNextState(Context context) throws OpenemsNamedException {
@@ -31,6 +35,9 @@ public class RunningHandler extends StateHandler<State, Context> {
 			ess.getBattery().setStartStop( StartStop.START );
 		}
 		if (ess.hasFaults()) {
+			
+			ess.stopOperation();
+			
 			return State.UNDEFINED;
 		}
 

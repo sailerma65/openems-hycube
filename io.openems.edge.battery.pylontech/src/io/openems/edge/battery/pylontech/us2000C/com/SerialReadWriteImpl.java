@@ -170,6 +170,7 @@ public class SerialReadWriteImpl extends AbstractOpenemsComponent implements Ser
 				serialPort.setNumDataBits(databits);
 				serialPort.setNumStopBits( stopbits.getValue() );
 				serialPort.setParity( parity.getValue() );
+				serialPort.setFlowControl(SerialPort.FLOW_CONTROL_DISABLED);
 				
 				serialPort.setComPortTimeouts( SerialPort.TIMEOUT_NONBLOCKING, 0, 0 );
 				

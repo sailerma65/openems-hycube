@@ -4,7 +4,9 @@ import java.time.Duration;
 import java.time.Instant;
 
 import io.openems.common.exceptions.OpenemsError.OpenemsNamedException;
+import io.openems.edge.common.channel.IntegerWriteChannel;
 import io.openems.edge.common.statemachine.StateHandler;
+import io.openems.edge.hycube.ess.HycubeEss;
 import io.openems.edge.hycube.ess.HycubeEssImpl;
 import io.openems.edge.hycube.ess.statemachine.StateMachine.State;
 
@@ -13,51 +15,49 @@ import io.openems.edge.hycube.ess.statemachine.StateMachine.State;
  *
  * <p>
  */
-public class GoRunningHandler extends StateHandler<State, Context> {
-	@Override
-	protected String debugLog() {
-		return State.GO_RUNNING.toString();
-	}
-
+public class InitBatteryHandler extends StateHandler<State, Context> {
 	private Instant entryAt = Instant.MIN;
-	private boolean initializationDone = false;
-	private boolean batteryConnected = false;
 	
-	private static final int WAIT_AFTER_REMOTE_ON = 30;
-
+	private static final int WAIT_SECONDS = 20;
+	
+	private boolean batteryStarted = false;
+	
 	@Override
 	protected void onEntry(Context context) throws OpenemsNamedException {
-
 		this.entryAt = Instant.now();
-		this.initializationDone = false;
-		this.batteryConnected = false;
+		batteryStarted = false;
 	}
 
+	@Override
+	protected String debugLog() {
+		return State.INIT_BATTERY.toString();
+	}
 
 	@Override
 	public State runAndGetNextState(Context context) throws OpenemsNamedException {
 		final HycubeEssImpl ess = context.getParent();
 
 		// Check for faults before proceeding
-		if (ess.hasFaults() || ess.getBattery().hasFaults() ) {
+		if (ess.hasFaults() || ess.getModbusCommunicationFailed() ) {
 			return State.ERROR;
 		}
 
-		if( !initializationDone )
+		if( !batteryStarted )
 		{
-			// end of initialization:switches on the CBi RAU (Remote actuator unit with lockout)
-			// - use runtime modbus register list
-			// - 
-			ess.initializationDone();
-			
-			initializationDone = true;
+			ess.getBattery().start();
+			batteryStarted = true;
+			return State.INIT_BATTERY;
 		}
-
-		if (Duration.between(this.entryAt, Instant.now()).getSeconds() > WAIT_AFTER_REMOTE_ON )
-		{
-			return State.RUNNING;
+		
+		if (Duration.between(this.entryAt, Instant.now()).getSeconds() > WAIT_SECONDS) {
+			if( ess.getBattery().isStarted() && !ess.getBattery().hasFaults() )
+			{
+				ess.connectBattery();
+				
+				return State.CHECKING;
+			}
 		}
-
-		return State.GO_RUNNING;
+		
+		return State.INIT_BATTERY;
 	}
 }

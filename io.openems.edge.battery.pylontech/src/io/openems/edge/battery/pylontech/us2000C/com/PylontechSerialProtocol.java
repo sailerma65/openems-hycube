@@ -72,7 +72,7 @@ public class PylontechSerialProtocol {
 	}
 
 	public static int getInfoLength(byte[] info) {
-		int lenId = info.length;
+		int lenId = info.length;;
 		if (lenId == 0) {
 			return 0;
 		}
@@ -100,6 +100,14 @@ public class PylontechSerialProtocol {
 	public void sendCmdRaw(int address, int cmd, byte[] info) throws IOException {
 		byte[] rawFrame = encodeCmd(address, 0x46, cmd, info == null ? new byte[0] : info);
 
+        /*System.err.println( "Sent: " + new String( rawFrame, StandardCharsets.US_ASCII) );
+        StringBuffer hexBuf = new StringBuffer();
+        for( int i = 0; i < rawFrame.length; i++ )
+        {
+        	hexBuf.append( "%02X ".formatted( rawFrame[i]));
+        }
+        System.err.println( "     " + hexBuf.toString() );*/
+
 		connection.writeBytes(rawFrame, rawFrame.length);
 	}
 
@@ -114,9 +122,9 @@ public class PylontechSerialProtocol {
 		byte[] headAscii = head.getBytes(StandardCharsets.US_ASCII);
 
 		// INFO must be sent as ASCII HEX (each byte -> 2 ASCII chars)
-		byte[] infoHexAscii = bytesToHex(info).getBytes(StandardCharsets.US_ASCII);
+		// byte[] infoHexAscii = bytesToHex(info).getBytes(StandardCharsets.US_ASCII);
 
-		byte[] frame = concat(headAscii, infoHexAscii);
+		byte[] frame = concat(headAscii, info);
 
 		int frameChecksum = getFrameChecksum(frame);
 		String checksumHex = String.format("%04X", frameChecksum);
@@ -204,6 +212,20 @@ public class PylontechSerialProtocol {
 	public Frame receiveOrWait() throws IOException {
 		byte[] buffer = new byte[1];
 
+		/*String debugStr = null;
+
+		if( debugStr != null )
+		{
+			debugStr = debugStr + "\r";
+			
+		//String debugStr = "~20024600C0220248323231303035453232323130303839F6D8";
+			byte[] rawFrame = debugStr.getBytes(StandardCharsets.US_ASCII);
+
+			byte[] f = decodeHwFrame(rawFrame);
+			return decodeFrame(f, rawFrame);
+		}*/
+		
+		
 		while (connection.bytesAvailable() >= 1) {
 			int received = connection.readBytes(buffer, 1);
 

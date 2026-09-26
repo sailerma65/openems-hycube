@@ -48,6 +48,8 @@ public class DenkoviRelaisBoardImpl extends AbstractOpenemsComponent
 
 		private BooleanWriteChannel[] writeChannels = {};
 
+		private boolean[] actualValues;
+		
 		@Reference
 		private BridgeHttpFactory httpBridgeFactory;
 
@@ -73,6 +75,8 @@ public class DenkoviRelaisBoardImpl extends AbstractOpenemsComponent
 
 			// Generate OutputChannels
 			this.writeChannels = new BooleanWriteChannel[config.numberOfOutputs()];
+			this.actualValues = new boolean[config.numberOfOutputs()];
+			
 			for (var i = 0; i < config.numberOfOutputs(); i++) {
 				var channelName = String.format(CHANNEL_NAME, i);
 				var doc = new BooleanDoc() //
@@ -144,18 +148,19 @@ public class DenkoviRelaisBoardImpl extends AbstractOpenemsComponent
 		}
 
 		private void executeWrite(BooleanWriteChannel channel, int index) {
-			var readValue = channel.value().get();
-			var writeValue = channel.getNextWriteValueAndReset();
-			if (writeValue.isEmpty()) {
+			boolean readValue = channel.value().orElse(false);
+			
+			if( readValue == actualValues[ index ] )
+			{
 				return;
 			}
-			if (Objects.equals(readValue, writeValue.get())) {
-				return;
-			}
-			final String url = this.baseUrl + "/relay/" + index + "?turn=" + (writeValue.get() ? "on" : "off");
+			
+			final String url = this.baseUrl + "/relay/" + index + "?turn=" + (readValue ? "on" : "off");
 			this.httpBridge.get(url).whenComplete((t, e) -> {
 				setValue(this, DenkoviRelaisBoard.ChannelId.SLAVE_COMMUNICATION_FAILED, e != null);
 				if (e == null) {
+					actualValues[ index ] = readValue;
+					
 					this.logInfo(this.log, "Executed write successfully for URL: " + url);
 				} else {
 					this.logError(this.log, "Failed to execute write for URL: " + url + "; Error: " + e.getMessage());

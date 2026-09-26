@@ -21,6 +21,8 @@ public class GoStoppedHandler extends StateHandler<State, Context> {
 		// Mark as stopped
 		ess._setStartStop(StartStop.STOP);
 
+		ess.stopOperation();
+		
 		ess.getBattery().stop();
 		
 		return State.STOPPED;

@@ -1,5 +1,8 @@
 package io.openems.edge.hycube.ess.statemachine;
 
+import java.time.Duration;
+import java.time.Instant;
+
 import io.openems.common.exceptions.OpenemsError.OpenemsNamedException;
 import io.openems.edge.common.channel.IntegerWriteChannel;
 import io.openems.edge.common.statemachine.StateHandler;
@@ -14,6 +17,16 @@ import io.openems.edge.hycube.ess.statemachine.StateMachine.State;
  */
 public class InitializingHandler extends StateHandler<State, Context> {
 
+
+	private Instant entryAt = Instant.MIN;
+	
+	@Override
+	protected void onEntry(Context context) throws OpenemsNamedException {
+		this.entryAt = Instant.now();
+
+	}
+
+
 	@Override
 	protected String debugLog() {
 		return State.INITIALIZING.toString();
@@ -24,7 +37,7 @@ public class InitializingHandler extends StateHandler<State, Context> {
 		final HycubeEssImpl ess = context.getParent();
 
 		// Check for faults before proceeding
-		if (ess.hasFaults()) {
+		if (ess.hasFaults() || ess.getBattery().hasFaults() ) {
 			return State.ERROR;
 		}
 
