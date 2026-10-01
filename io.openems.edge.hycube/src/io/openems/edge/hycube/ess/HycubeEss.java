@@ -420,6 +420,8 @@ public interface HycubeEss extends ManagedSymmetricEss, OpenemsComponent, EventH
 				.accessMode(READ_WRITE)//
 				.text("0x00EE = manual operation")),
 
+		// ================= Registers for inverter startup phase =================
+
 		/**
 		 * Battery minimum SOC off grid (0x405E)
 		 *

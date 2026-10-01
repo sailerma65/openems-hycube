@@ -15,21 +15,33 @@ import io.openems.edge.hycube.ess.statemachine.StateMachine.State;
  *
  * <p>
  */
-public class InitializingHandler extends StateHandler<State, Context> {
+public class SwitchBatteryConnection extends StateHandler<State, Context> {
 
 
 	private Instant entryAt = Instant.MIN;
 	
+	private static final int WAIT_TIME = 10;
+	
+	private enum Steps
+	{
+		SOFTSTART_ON,
+		WAIT,
+		BATTERY_ON,
+		SOFTSTART_OFF
+	}
+	
+	private Steps step = Steps.SOFTSTART_ON;
+	
 	@Override
 	protected void onEntry(Context context) throws OpenemsNamedException {
 		this.entryAt = Instant.now();
-
+		step = Steps.SOFTSTART_ON;
 	}
 
 
 	@Override
 	protected String debugLog() {
-		return State.INITIALIZING.toString();
+		return State.SWITCH_ON.toString();
 	}
 
 	@Override
@@ -40,31 +52,30 @@ public class InitializingHandler extends StateHandler<State, Context> {
 		if (ess.hasFaults() || ess.getBattery().hasFaults() ) {
 			return State.ERROR;
 		}
-
-		for( InitValidation validation : ess.getInitChannelList() )
-		{
-			if( !validation.isValidated() )
-			{
-				IntegerWriteChannel remoteControlChannel = ess.channel( validation.getChannelId() );
-				
-				remoteControlChannel.setNextWriteValue( validation.getCheckValue() );
-
-				validation.validate();
 		
-				// set one value in each cycle (approximately one per second)
-				// The reason is: It is not clear why HYCUBE software also sets the iniatial values quite slowly.
-				// Maybe it is intended because of eeprom write operations.
-				return State.INITIALIZING;
-			}
+		if (Duration.between(this.entryAt, Instant.now()).getSeconds() < WAIT_TIME) {
+			// Try again
+			return State.SWITCH_ON;
+		}
+
+		switch( step )
+		{
+		case SOFTSTART_ON:
+			ess.setSoftStart( true );
+			step =Steps.WAIT; 
+			break;
+		case WAIT:
+			step = Steps.BATTERY_ON;
+			break;
+		case BATTERY_ON:
+			ess.connectBattery();
+			step = Steps.SOFTSTART_OFF;
+			break;
+		case SOFTSTART_OFF:
+			ess.setSoftStart(false);
+			return State.INIT_WRITE_REGISTERS;
 		}
 		
-		// all values are initialized:
-		
-		IntegerWriteChannel remoteControlChannel = ess.channel( HycubeEss.ChannelId.INIT_REMOTE_CONTROL );
-
-		// set Remote Control ON
-		remoteControlChannel.setNextValue( 0xFF00 );
-		
-		return State.GO_RUNNING;
+		return State.SWITCH_ON;
 	}
 }

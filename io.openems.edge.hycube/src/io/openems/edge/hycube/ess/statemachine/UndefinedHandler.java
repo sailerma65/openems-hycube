@@ -22,8 +22,7 @@ public class UndefinedHandler extends StateHandler<State, Context> {
 		case START -> {
 			if( !ess.getModbusCommunicationFailed() )
 			{
-				if( ess.setRemoteControl( false ) )
-					yield State.INIT_BATTERY;
+				yield State.INIT_BATTERY;
 			}
 			yield State.UNDEFINED;
 		}

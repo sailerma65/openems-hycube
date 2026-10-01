@@ -60,7 +60,6 @@ import io.openems.edge.common.sum.GridMode;
 import io.openems.edge.common.taskmanager.Priority;
 import io.openems.edge.common.type.Phase.SinglePhase;
 import io.openems.edge.ess.api.AsymmetricEss;
-import io.openems.edge.ess.api.HybridEss;
 import io.openems.edge.ess.api.ManagedAsymmetricEss;
 import io.openems.edge.ess.api.ManagedSinglePhaseEss;
 import io.openems.edge.ess.api.ManagedSymmetricEss;
@@ -144,25 +143,27 @@ public class HycubeEssImpl extends AbstractOpenemsModbusComponent
 
 	public static final int BATTERY_VOLTAGE = 48; // for capacity calculation we cannot use current voltage
 
-	private static final InitValidation[] INIT_CHANNEL_LIST = new InitValidation[] {
-			new InitValidation( HycubeEss.ChannelId.DSP_VERSION ),	// 0x4024
+	private static final InitValidation[] INIT_CHANNEL_LIST_BEFORE_SWITCH = new InitValidation[] {
 			new InitValidation( HycubeEss.ChannelId.INIT_PCU_CONTROL, 2 ), // 0x3501
-			new InitValidation( HycubeEss.ChannelId.SERIAL_NUMBER ), // 0x5301
-			new InitValidation( HycubeEss.ChannelId.INIT_EPS_ERROR_CLEAR_MODE, 0x00EE ), // 0x4078
 			new InitValidation( HycubeEss.ChannelId.INIT_RESET_BMS_ERRORS, 0 ), // 0x407B
-			new InitValidation( HycubeEss.ChannelId.STATUS_WORD_4046 ), // 0x4046
-			new InitValidation( HycubeEss.ChannelId.STATUS_WORD_4047 ), // 0x4047
-			new InitValidation( HycubeEss.ChannelId.STATUS_WORD_404B ), // 0x404B
-			new InitValidation( HycubeEss.ChannelId.INIT_POWER_FACTOR_MODE, 0 ), // 0x4053
-			new InitValidation( HycubeEss.ChannelId.INIT_BATTERY_DISCHARGE_SOC, 15 ), // 0x405B
-			new InitValidation( HycubeEss.ChannelId.FINAL_CHARGING_VOLTAGE, 480, 540, 532 ), // 0x405C
-			new InitValidation( HycubeEss.ChannelId.FINAL_DISCHARGING_VOLTAGE, 420, 460, 455 ), // 0x405D
+			new InitValidation( HycubeEss.ChannelId.INIT_EPS_ERROR_CLEAR_MODE, 0x00EE ), // 0x4078
+	};
+	
+	private static final InitValidation[] INIT_CHANNEL_LIST_AFTER_SWITCH = new InitValidation[] {
+			new InitValidation( HycubeEss.ChannelId.SET_MAX_CHARGE_CURRENT,  350 ), // 0x4058
+			new InitValidation( HycubeEss.ChannelId.SET_MAX_DISCHARGE_CURRENT, 500 ), // 0x4059
 			new InitValidation( HycubeEss.ChannelId.INIT_BATTERY_MINIMUM_SOC_OFF_GRID, 10 ), // 0x405E
-			new InitValidation( HycubeEss.ChannelId.INIT_BATTERY_MINIMUM_SOC_ON_GRID, 10 ), // 0x405F
-			new InitValidation( HycubeEss.ChannelId.INIT_GRID_CODE, 3 ), // 0x4063
-			new InitValidation( HycubeEss.ChannelId.INIT_MAX_AC_OUTPUT_POWER, 4600 ), // 0x4064
-			new InitValidation( HycubeEss.ChannelId.INIT_REACTIVE_POWER, 0 ), // 0x4065
-			new InitValidation( HycubeEss.ChannelId.INIT_POWER_FACTOR, 950 )  // 0x4066
+			new InitValidation( HycubeEss.ChannelId.INIT_BATTERY_MINIMUM_SOC_ON_GRID,  10 ), // 0x405F
+			new InitValidation( HycubeEss.ChannelId.INIT_BATTERY_DISCHARGE_SOC,  15 ), // 0x405B
+			new InitValidation( HycubeEss.ChannelId.INIT_MAX_AC_OUTPUT_POWER,  4600 ), // 0x4064
+			new InitValidation( HycubeEss.ChannelId.INIT_GRID_CODE,  3 ), // 0x4063
+			new InitValidation( HycubeEss.ChannelId.FINAL_CHARGING_VOLTAGE,  528 ), // 0x405C
+			new InitValidation( HycubeEss.ChannelId.FINAL_DISCHARGING_VOLTAGE,  455 ), // 0x405D
+			new InitValidation( HycubeEss.ChannelId.EMERGENCY_POWER_OUTPUT_MODE,  0x00EE ), // 0x40A1
+			new InitValidation( HycubeEss.ChannelId.INIT_POWER_FACTOR_MODE,  0 ), // 0x4053
+			new InitValidation( HycubeEss.ChannelId.INIT_POWER_FACTOR,  950 ),  // 0x4066
+			new InitValidation( HycubeEss.ChannelId.INIT_REACTIVE_POWER,  0 ), // 0x4065
+			new InitValidation( HycubeEss.ChannelId.INIT_REMOTE_CONTROL, 0xFF00 ), // 0x4100
 	};
 
 
@@ -205,6 +206,112 @@ public class HycubeEssImpl extends AbstractOpenemsModbusComponent
 
 	private final CalculateEnergyFromPower calculateChargeEnergy = new CalculateEnergyFromPower(this,
 			SymmetricEss.ChannelId.ACTIVE_CHARGE_ENERGY);
+
+	
+	private FC3ReadRegistersTask readDspVersionTask = new FC3ReadRegistersTask(0x4024, Priority.LOW, //
+			this.m(HycubeEss.ChannelId.DSP_VERSION, new UnsignedDoublewordElement(0x4024)));
+	
+	private FC3ReadRegistersTask readStatusWordsTask = new FC3ReadRegistersTask(0x4046, Priority.LOW, //
+			this.m(HycubeEss.ChannelId.STATUS_WORD_4046, new UnsignedWordElement(0x4046)),
+			this.m(HycubeEss.ChannelId.STATUS_WORD_4047, new UnsignedWordElement(0x4047)),
+			new DummyRegisterElement(0x4048, 0x404A),
+			this.m(HycubeEss.ChannelId.STATUS_WORD_404B, new UnsignedWordElement(0x404B)));
+
+	private FC3ReadRegistersTask readSerialNumberTask = new FC3ReadRegistersTask(0x5301, Priority.LOW, //
+			this.m(HycubeEss.ChannelId.SERIAL_NUMBER, new StringWordElement(0x5301, 13)));
+
+	private FC3ReadRegistersTask readRuntimeValuesTask = new FC3ReadRegistersTask(0x4000, Priority.HIGH, //
+			this.m(HycubeEss.ChannelId.SOLAR1_VOLTAGE, new UnsignedWordElement(0x4000)),
+			this.m(HycubeEss.ChannelId.SOLAR1_CURRENT, new UnsignedWordElement(0x4001)),
+			this.m(HycubeEss.ChannelId.SOLAR1_POWER, new UnsignedWordElement(0x4002)),
+			this.m(HycubeEss.ChannelId.SOLAR2_VOLTAGE, new UnsignedWordElement(0x4003)),
+			this.m(HycubeEss.ChannelId.SOLAR2_CURRENT, new UnsignedWordElement(0x4004)),
+			this.m(HycubeEss.ChannelId.SOLAR2_POWER, new UnsignedWordElement(0x4005)),
+			this.m(HycubeEss.ChannelId.INVERTER_L1_VOLTAGE, new UnsignedWordElement(0x4006)),
+			this.m(HycubeEss.ChannelId.INVERTER_L1_CURRENT, new SignedWordElement(0x4007)),
+			this.m(HycubeEss.ChannelId.GRID_L1_VOLTAGE, new UnsignedWordElement(0x4008)),
+			new DummyRegisterElement(0x4009, 0x4009),
+			this.m(HycubeEss.ChannelId.GRID_L1_CURRENT, new SignedWordElement(0x400A)),
+			new DummyRegisterElement(0x400b, 0x4014),
+			this.m(HycubeEss.ChannelId.GRID_FREQUENCY, new UnsignedWordElement(0x4015), ElementToChannelConverter.SCALE_FACTOR_1 ),
+			this.m(HycubeEss.ChannelId.GRID_POWER_FACTOR, new SignedWordElement(0x4016)),
+			this.m(HycubeEss.ChannelId.GRID_POWER_L1, new SignedWordElement(0x4017)),
+			this.m(HycubeEss.ChannelId.GRID_REACTIVE_POWER_L1, new SignedWordElement(0x4018)),
+			this.m(HycubeEss.ChannelId.GRID_APPARENT_POWER_L1, new SignedWordElement(0x4019)),
+			this.m(HycubeEss.ChannelId.BATTERY_CURRENT, new SignedWordElement(0x401A)),
+			this.m(HycubeEss.ChannelId.BATTERY_VOLTAGE, new UnsignedWordElement(0x401B)),
+			new DummyRegisterElement(0x401c, 0x401e),
+			this.m(SymmetricEss.ChannelId.ACTIVE_POWER, new SignedWordElement(0x401f)),
+			this.m(HycubeEss.ChannelId.INVERTER_TEMPERATURE, new SignedWordElement(0x4020)),
+			new DummyRegisterElement(0x4021, 0x4023),
+			this.m(HycubeEss.ChannelId.DSP_VERSION, new UnsignedDoublewordElement(0x4024)),
+			new DummyRegisterElement(0x4026, 0x402C),
+			this.m(HycubeEss.ChannelId.LOAD_OUTPUT_VOLTAGE_L1, new SignedWordElement(0x402D)),
+			new DummyRegisterElement(0x402E, 0x402F),
+			this.m(HycubeEss.ChannelId.OFF_GRID_FREQUENCY, new UnsignedWordElement(0x4030), ElementToChannelConverter.SCALE_FACTOR_MINUS_2 ),
+			this.m(HycubeEss.ChannelId.LOAD_OUTPUT_CURRENT_L1, new UnsignedWordElement(0x4031)),
+			new DummyRegisterElement(0x4032, 0x4033),
+			this.m(HycubeEss.ChannelId.LOAD_OUTPUT_POWER_FACTOR, new SignedWordElement(0x4034)),
+			this.m(HycubeEss.ChannelId.LOAD_POWER_L1, new SignedWordElement(0x4035)),
+			this.m(HycubeEss.ChannelId.LOAD_REACTIVE_POWER_L1, new SignedWordElement(0x4036)),
+			this.m(HycubeEss.ChannelId.LOAD_APPARENT_POWER_L1, new SignedWordElement(0x4037))						
+			);
+	
+	private ModbusProtocol modbusProtocol = new ModbusProtocol(this, //
+			new FC6WriteRegisterTask(0x4100, 
+					this.m(HycubeEss.ChannelId.INIT_REMOTE_CONTROL, new UnsignedWordElement(0x4100))),
+			
+			new FC6WriteRegisterTask(0x3501, 
+					this.m(HycubeEss.ChannelId.INIT_PCU_CONTROL, new UnsignedWordElement(0x3501))),
+
+			new FC6WriteRegisterTask(0x407B,  //
+					this.m(HycubeEss.ChannelId.INIT_RESET_BMS_ERRORS, new UnsignedWordElement(0x407B))),
+
+				new FC6WriteRegisterTask(0x4078,  //
+						this.m(HycubeEss.ChannelId.INIT_EPS_ERROR_CLEAR_MODE, new UnsignedWordElement(0x4078))),
+				
+				new FC6WriteRegisterTask(0x4058,
+						m(HycubeEss.ChannelId.SET_MAX_CHARGE_CURRENT, new UnsignedWordElement(0x4058))),
+				
+				new FC6WriteRegisterTask(0x4059,
+						m(HycubeEss.ChannelId.SET_MAX_DISCHARGE_CURRENT, new UnsignedWordElement(0x4059))),
+				
+				new FC6WriteRegisterTask(0x405E,  //
+						this.m(HycubeEss.ChannelId.INIT_BATTERY_MINIMUM_SOC_OFF_GRID, new UnsignedWordElement(0x405E))),
+
+				new FC6WriteRegisterTask(0x405F,  //
+						this.m(HycubeEss.ChannelId.INIT_BATTERY_MINIMUM_SOC_ON_GRID, new UnsignedWordElement(0x405F))),
+
+				new FC6WriteRegisterTask(0x4064,  //
+						this.m(HycubeEss.ChannelId.INIT_MAX_AC_OUTPUT_POWER, new UnsignedWordElement(0x4064))),
+
+			new FC6WriteRegisterTask(0x405B,  //
+					this.m(HycubeEss.ChannelId.INIT_BATTERY_DISCHARGE_SOC, new UnsignedWordElement(0x405B))),
+
+			new FC6WriteRegisterTask(0x4063,  //
+					this.m(HycubeEss.ChannelId.INIT_GRID_CODE, new UnsignedWordElement(0x4063))),
+
+			new FC6WriteRegisterTask(0x405C,  //
+					this.m(HycubeEss.ChannelId.FINAL_CHARGING_VOLTAGE, new UnsignedWordElement(0x405C))),
+
+			new FC6WriteRegisterTask(0x405D,  //
+					this.m(HycubeEss.ChannelId.FINAL_DISCHARGING_VOLTAGE, new UnsignedWordElement(0x405D))),
+
+			new FC6WriteRegisterTask(0x40A1,  //
+					this.m(HycubeEss.ChannelId.EMERGENCY_POWER_OUTPUT_MODE, new UnsignedWordElement(0x40A1))),
+
+				new FC6WriteRegisterTask(0x4053,  //
+						this.m(HycubeEss.ChannelId.INIT_POWER_FACTOR_MODE, new UnsignedWordElement(0x4053))),
+
+				new FC6WriteRegisterTask(0x4066,  //
+						this.m(HycubeEss.ChannelId.INIT_POWER_FACTOR, new UnsignedWordElement(0x4066))),
+
+				// Write sleep/wake register
+				new FC6WriteRegisterTask(0x405a,
+						m(HycubeEss.ChannelId.SET_TARGET_BATTERY_POWER, new SignedWordElement(0x405a))),
+
+				new FC6WriteRegisterTask(0x4065,  //
+						this.m(HycubeEss.ChannelId.INIT_REACTIVE_POWER, new UnsignedWordElement(0x4065))));
 
 
 
@@ -319,124 +426,115 @@ public class HycubeEssImpl extends AbstractOpenemsModbusComponent
 
 		if( battery instanceof PylontechUS2000CBattery pyBattery )
 		{
-			setMaxChargingVoltage( pyBattery.getMaxChargeVoltage() );
-			
 			pyBattery.getMaxChargeVoltageChannel().onSetNextValue( value -> 
 			{
-				setMaxChargingVoltage( value.get() );
+				setMaxChargingVoltage( value.get(), false );
 			} );
 			
-			setMaxChargeCurrent( pyBattery.getMaxChargeCurrent() );
-
 			pyBattery.getMaxChargeCurrentChannel().onSetNextValue( value -> 
 			{
-				setMaxChargeCurrent( value.get() );
+				setMaxChargeCurrent( value.get(), false );
 			} );
 
-			setMinDischargingVoltage( pyBattery.getMinDischargeVoltage() );
-			
 			pyBattery.getMinDischargVoltagetChannel().onSetNextValue( value -> 
 			{
-				setMinDischargingVoltage( value.get() );
+				setMinDischargingVoltage( value.get(), false );
 			} );
 
-			setMaxDishargeCurrent( pyBattery.getMaxDischargeCurrent() );
-			
 			pyBattery.getMaxDischargeCurrentChannel().onSetNextValue( value -> 
 			{
-				setMaxDishargeCurrent( value.get() );
+				setMaxDishargeCurrent( value.get(), false );
 			} );
 		}
 
 		
+		IntegerReadChannel activePowerChannel = this.channel(SymmetricEss.ChannelId.ACTIVE_POWER );
+		
+		activePowerChannel.setNextValue(0);
+		
 		addCopyListener( battery.getSocChannel(), SymmetricEss.ChannelId.SOC, ElementToChannelConverter.DIRECT_1_TO_1 );
 	}
 
-	private void setMaxChargingVoltage( int i_voltage )
+	private void setMaxChargingVoltage( int i_voltage, boolean i_force )
 	{
-		if( recentSetMaxChargeVoltageValue == null || recentSetMaxChargeVoltageValue != i_voltage )
+		if( stateMachine.getCurrentState() == State.RUNNING || i_force )
 		{
-			IntegerWriteChannel channel = this.channel( HycubeEss.ChannelId.FINAL_CHARGING_VOLTAGE );
-			
-			try {
-				channel.setNextWriteValue(  i_voltage );
-				channel.setNextValue(  i_voltage );
-			} catch (OpenemsNamedException e) {
-				logError( this.log, "Error writing FINAL_CHARGING_VOLTAGE" + e.getMessage() );
-			}
-			recentSetMaxChargeVoltageValue = i_voltage;
-		}
-			
-	}
-
-	private void setMinDischargingVoltage( int i_voltage )
-	{
-		if( recentSetMinDischargeVoltageValue == null || recentSetMinDischargeVoltageValue != i_voltage )
-		{
-			IntegerWriteChannel channel = this.channel( HycubeEss.ChannelId.FINAL_DISCHARGING_VOLTAGE );
-			
-			try {
-				channel.setNextWriteValue(  i_voltage );
-				channel.setNextValue(  i_voltage );
-			} catch (OpenemsNamedException e) {
-				logError( this.log, "Error writing FINAL_DISCHARGING_VOLTAGE" + e.getMessage() );
-			}
-			recentSetMinDischargeVoltageValue = i_voltage;
-		}
-	}
-
-	private void setMaxChargeCurrent( int i_current )
-	{
-		if( recentSetMaxChargeCurrentValue == null || recentSetMaxChargeCurrentValue != i_current )
-		{
-			int current = i_current;
-			
-			IntegerWriteChannel channel = this.channel( HycubeEss.ChannelId.SET_MAX_CHARGE_CURRENT );
-
-			if( this.stateMachine.getCurrentState() == State.RUNNING )
+			if( recentSetMaxChargeVoltageValue == null || recentSetMaxChargeVoltageValue != i_voltage || i_force )
 			{
+				IntegerWriteChannel channel = this.channel( HycubeEss.ChannelId.FINAL_CHARGING_VOLTAGE );
+				
+				try {
+					channel.setNextWriteValue(  i_voltage );
+					channel.setNextValue(  i_voltage );
+				} catch (OpenemsNamedException e) {
+					logError( this.log, "Error writing FINAL_CHARGING_VOLTAGE" + e.getMessage() );
+				}
+				recentSetMaxChargeVoltageValue = i_voltage;
+			}
+		}			
+	}
+
+	private void setMinDischargingVoltage( int i_voltage, boolean i_force  )
+	{
+		if( stateMachine.getCurrentState() == State.RUNNING || i_force )
+		{
+			if( recentSetMinDischargeVoltageValue == null || recentSetMinDischargeVoltageValue != i_voltage || i_force )
+			{
+				IntegerWriteChannel channel = this.channel( HycubeEss.ChannelId.FINAL_DISCHARGING_VOLTAGE );
+				
+				try {
+					channel.setNextWriteValue(  i_voltage );
+					channel.setNextValue(  i_voltage );
+				} catch (OpenemsNamedException e) {
+					logError( this.log, "Error writing FINAL_DISCHARGING_VOLTAGE" + e.getMessage() );
+				}
+				recentSetMinDischargeVoltageValue = i_voltage;
+			}
+		}
+	}
+
+	private void setMaxChargeCurrent( int i_current, boolean i_force )
+	{
+		if( this.stateMachine.getCurrentState() == State.RUNNING || i_force )
+		{
+			if( recentSetMaxChargeCurrentValue == null || recentSetMaxChargeCurrentValue != i_current || i_force )
+			{
+				int current = i_current;
+			
+				IntegerWriteChannel channel = this.channel( HycubeEss.ChannelId.SET_MAX_CHARGE_CURRENT );
+
 				recentSetMaxChargeCurrentValue = current;
-			}
-			else
-			{
-				current = 0;
-			}
-			
-			try {
-				channel.setNextWriteValue(  current );
-				channel.setNextValue(  current );
-			} catch (OpenemsNamedException e) {
-				logError( this.log, "Error writing SET_MAX_CHARGE_CURRENT" + e.getMessage() );
+
+				try {
+					channel.setNextWriteValue(  current );
+					channel.setNextValue(  current );
+				} catch (OpenemsNamedException e) {
+					logError( this.log, "Error writing SET_MAX_CHARGE_CURRENT" + e.getMessage() );
+				}
 			}
 		}
-
 	}
 
-	private void setMaxDishargeCurrent( int i_current )
+	private void setMaxDishargeCurrent( int i_current, boolean i_force )
 	{
-		if( recentSetMaxDischargeCurrentValue == null || recentSetMaxDischargeCurrentValue != i_current )
+		if( this.stateMachine.getCurrentState() == State.RUNNING || i_force )
 		{
-			int current = i_current;
-			
-			IntegerWriteChannel channel = this.channel( HycubeEss.ChannelId.SET_MAX_DISCHARGE_CURRENT );
-			
-			if( this.stateMachine.getCurrentState() == State.RUNNING )
+			if( recentSetMaxDischargeCurrentValue == null || recentSetMaxDischargeCurrentValue != i_current || i_force )
 			{
+				int current = i_current;
+				
+				IntegerWriteChannel channel = this.channel( HycubeEss.ChannelId.SET_MAX_DISCHARGE_CURRENT );
+				
 				recentSetMaxDischargeCurrentValue = current;
-			}
-			else
-			{
-				current = 0;
-			}
 			
-			try {
-				channel.setNextWriteValue(  current );
-				channel.setNextValue(  current );
-			} catch (OpenemsNamedException e) {
-				logError( this.log, "Error writing SET_MAX_DISCHARGE_CURRENT" + e.getMessage() );
+				try {
+					channel.setNextWriteValue(  current );
+					channel.setNextValue(  current );
+				} catch (OpenemsNamedException e) {
+					logError( this.log, "Error writing SET_MAX_DISCHARGE_CURRENT" + e.getMessage() );
+				}
 			}
 		}
-
 	}
 
 	@Override
@@ -461,6 +559,11 @@ public class HycubeEssImpl extends AbstractOpenemsModbusComponent
 		this.logInfo( this.log, message);
 	}
 	
+	public void doLogDebug( String message )
+	{
+		this.logDebug( this.log, message);
+	}
+
 	@Override
 	public String debugLog() {
 		return stateMachine.debugLog() + "|SoC:" + this.getSoc().asString() //
@@ -1036,8 +1139,6 @@ public class HycubeEssImpl extends AbstractOpenemsModbusComponent
 
 	private final AtomicReference<StartStop> startStopTarget = new AtomicReference<>(StartStop.UNDEFINED);
 
-	private final AtomicReference<Boolean> needsInit = new AtomicReference<>(Boolean.TRUE);
-
 	@Override
 	public void setStartStop(StartStop value) {
 		if (this.startStopTarget.getAndSet(value) != value) {
@@ -1063,169 +1164,40 @@ public class HycubeEssImpl extends AbstractOpenemsModbusComponent
 	public int getPowerPrecision() {
 		return 100;
 	}
-	
-	private ModbusProtocol getStartupModbusProtocol()
+
+	public FC3ReadRegistersTask getReadDspVersionTask()
 	{
-		return new ModbusProtocol(this, //
-				new FC3ReadRegistersTask(0x3501, Priority.LOW, //
-						this.m(HycubeEss.ChannelId.INIT_PCU_CONTROL, new UnsignedWordElement(0x3501))),
-
-				new FC3ReadRegistersTask(0x4024, Priority.LOW, //
-						this.m(HycubeEss.ChannelId.DSP_VERSION, new UnsignedDoublewordElement(0x4024))),
-
-				new FC3ReadRegistersTask(0x4046, Priority.LOW, //
-						this.m(HycubeEss.ChannelId.STATUS_WORD_4046, new UnsignedWordElement(0x4046)),
-						this.m(HycubeEss.ChannelId.STATUS_WORD_4047, new UnsignedWordElement(0x4047)),
-						new DummyRegisterElement(0x4048, 0x404A),
-						this.m(HycubeEss.ChannelId.STATUS_WORD_404B, new UnsignedWordElement(0x404B))),
-
-						
-				new FC3ReadRegistersTask(0x4053, Priority.LOW, //
-						this.m(HycubeEss.ChannelId.INIT_POWER_FACTOR_MODE, new UnsignedWordElement(0x4053))),
-
-				new FC3ReadRegistersTask(0x4058, Priority.LOW, //
-						this.m(HycubeEss.ChannelId.SET_MAX_CHARGE_CURRENT, new UnsignedWordElement(0x4058)),
-						this.m(HycubeEss.ChannelId.SET_MAX_DISCHARGE_CURRENT, new UnsignedWordElement(0x4059)),
-						this.m(HycubeEss.ChannelId.SET_TARGET_BATTERY_POWER, new SignedWordElement(0x405a)),
-						this.m(HycubeEss.ChannelId.INIT_BATTERY_DISCHARGE_SOC, new UnsignedWordElement(0x405B)),
-						this.m(HycubeEss.ChannelId.FINAL_CHARGING_VOLTAGE, new UnsignedWordElement(0x405C)),
-						this.m(HycubeEss.ChannelId.FINAL_DISCHARGING_VOLTAGE, new UnsignedWordElement(0x405D)),
-						this.m(HycubeEss.ChannelId.INIT_BATTERY_MINIMUM_SOC_OFF_GRID, new UnsignedWordElement(0x405E)),
-						this.m(HycubeEss.ChannelId.INIT_BATTERY_MINIMUM_SOC_ON_GRID, new UnsignedWordElement(0x405F)),
-						new DummyRegisterElement(0x4060, 0x4062),
-						this.m(HycubeEss.ChannelId.INIT_GRID_CODE, new UnsignedWordElement(0x4063)),
-						this.m(HycubeEss.ChannelId.INIT_MAX_AC_OUTPUT_POWER, new UnsignedWordElement(0x4064)),
-						this.m(HycubeEss.ChannelId.INIT_REACTIVE_POWER, new UnsignedWordElement(0x4065)),
-						this.m(HycubeEss.ChannelId.INIT_POWER_FACTOR, new UnsignedWordElement(0x4066))),
-
-
-				new FC3ReadRegistersTask(0x4078, Priority.LOW, //
-						this.m(HycubeEss.ChannelId.INIT_EPS_ERROR_CLEAR_MODE, new UnsignedWordElement(0x4078)),
-						new DummyRegisterElement(0x4079, 0x407A),
-						this.m(HycubeEss.ChannelId.INIT_RESET_BMS_ERRORS, new UnsignedWordElement(0x407B))),
-
-				new FC3ReadRegistersTask(0x4100, Priority.LOW, //
-						this.m(HycubeEss.ChannelId.INIT_REMOTE_CONTROL, new UnsignedWordElement(0x4100))),
-						
-				new FC3ReadRegistersTask(0x5301, Priority.LOW, //
-						this.m(HycubeEss.ChannelId.SERIAL_NUMBER, new StringWordElement(0x5301, 13))),
-
-				new FC6WriteRegisterTask(0x3501, 
-						this.m(HycubeEss.ChannelId.INIT_PCU_CONTROL, new UnsignedWordElement(0x3501))),
-
-				new FC6WriteRegisterTask(0x4100, 
-							this.m(HycubeEss.ChannelId.INIT_REMOTE_CONTROL, new UnsignedWordElement(0x4100))),
-					
-					new FC6WriteRegisterTask(0x4078,  //
-							this.m(HycubeEss.ChannelId.INIT_EPS_ERROR_CLEAR_MODE, new UnsignedWordElement(0x4078))),
-					
-					new FC6WriteRegisterTask(0x407B,  //
-							this.m(HycubeEss.ChannelId.INIT_RESET_BMS_ERRORS, new UnsignedWordElement(0x407B))),
-
-					new FC6WriteRegisterTask(0x4053,  //
-							this.m(HycubeEss.ChannelId.INIT_POWER_FACTOR_MODE, new UnsignedWordElement(0x4053))),
-
-					new FC6WriteRegisterTask(0x405B,  //
-							this.m(HycubeEss.ChannelId.INIT_BATTERY_DISCHARGE_SOC, new UnsignedWordElement(0x405B))),
-
-					new FC6WriteRegisterTask(0x405C,  //
-							this.m(HycubeEss.ChannelId.FINAL_CHARGING_VOLTAGE, new UnsignedWordElement(0x405C))),
-
-					new FC6WriteRegisterTask(0x405D,  //
-							this.m(HycubeEss.ChannelId.FINAL_DISCHARGING_VOLTAGE, new UnsignedWordElement(0x405D))),
-
-					new FC6WriteRegisterTask(0x405E,  //
-							this.m(HycubeEss.ChannelId.INIT_BATTERY_MINIMUM_SOC_OFF_GRID, new UnsignedWordElement(0x405E))),
-
-					new FC6WriteRegisterTask(0x405F,  //
-							this.m(HycubeEss.ChannelId.INIT_BATTERY_MINIMUM_SOC_ON_GRID, new UnsignedWordElement(0x405F))),
-
-					new FC6WriteRegisterTask(0x4063,  //
-							this.m(HycubeEss.ChannelId.INIT_GRID_CODE, new UnsignedWordElement(0x4063))),
-
-					new FC6WriteRegisterTask(0x4064,  //
-							this.m(HycubeEss.ChannelId.INIT_MAX_AC_OUTPUT_POWER, new UnsignedWordElement(0x4064))),
-
-					new FC6WriteRegisterTask(0x4065,  //
-							this.m(HycubeEss.ChannelId.INIT_REACTIVE_POWER, new UnsignedWordElement(0x4065))),
-
-					new FC6WriteRegisterTask(0x4066,  //
-							this.m(HycubeEss.ChannelId.INIT_POWER_FACTOR, new UnsignedWordElement(0x4066))));
+		return readDspVersionTask;
 	}
 
-	private ModbusProtocol getRuntimeModbusProtocol()
+	public FC3ReadRegistersTask getReadStatusWordsTask()
 	{
-		return new ModbusProtocol(this, //
-				new FC3ReadRegistersTask(0x4000, Priority.HIGH, //
-						this.m(HycubeEss.ChannelId.SOLAR1_VOLTAGE, new UnsignedWordElement(0x4000)),
-						this.m(HycubeEss.ChannelId.SOLAR1_CURRENT, new UnsignedWordElement(0x4001)),
-						this.m(HycubeEss.ChannelId.SOLAR1_POWER, new UnsignedWordElement(0x4002)),
-						this.m(HycubeEss.ChannelId.SOLAR2_VOLTAGE, new UnsignedWordElement(0x4003)),
-						this.m(HycubeEss.ChannelId.SOLAR2_CURRENT, new UnsignedWordElement(0x4004)),
-						this.m(HycubeEss.ChannelId.SOLAR2_POWER, new UnsignedWordElement(0x4005)),
-						this.m(HycubeEss.ChannelId.INVERTER_L1_VOLTAGE, new UnsignedWordElement(0x4006)),
-						this.m(HycubeEss.ChannelId.INVERTER_L1_CURRENT, new SignedWordElement(0x4007)),
-						this.m(HycubeEss.ChannelId.GRID_L1_VOLTAGE, new UnsignedWordElement(0x4008)),
-						new DummyRegisterElement(0x4009, 0x4009),
-						this.m(HycubeEss.ChannelId.GRID_L1_CURRENT, new SignedWordElement(0x400A)),
-						new DummyRegisterElement(0x400b, 0x4014),
-						this.m(HycubeEss.ChannelId.GRID_FREQUENCY, new UnsignedWordElement(0x4015), ElementToChannelConverter.SCALE_FACTOR_1 ),
-						this.m(HycubeEss.ChannelId.GRID_POWER_FACTOR, new SignedWordElement(0x4016)),
-						this.m(HycubeEss.ChannelId.GRID_POWER_L1, new SignedWordElement(0x4017)),
-						this.m(HycubeEss.ChannelId.GRID_REACTIVE_POWER_L1, new SignedWordElement(0x4018)),
-						this.m(HycubeEss.ChannelId.GRID_APPARENT_POWER_L1, new SignedWordElement(0x4019)),
-						this.m(HycubeEss.ChannelId.BATTERY_CURRENT, new SignedWordElement(0x401A)),
-						this.m(HycubeEss.ChannelId.BATTERY_VOLTAGE, new UnsignedWordElement(0x401B)),
-						new DummyRegisterElement(0x401c, 0x401e),
-						this.m(SymmetricEss.ChannelId.ACTIVE_POWER, new SignedWordElement(0x401f)),
-						this.m(HycubeEss.ChannelId.INVERTER_TEMPERATURE, new SignedWordElement(0x4020)),
-						new DummyRegisterElement(0x4021, 0x4023),
-						this.m(HycubeEss.ChannelId.DSP_VERSION, new UnsignedDoublewordElement(0x4024)),
-						new DummyRegisterElement(0x4026, 0x402C),
-						this.m(HycubeEss.ChannelId.LOAD_OUTPUT_VOLTAGE_L1, new SignedWordElement(0x402D)),
-						new DummyRegisterElement(0x402E, 0x402F),
-						this.m(HycubeEss.ChannelId.OFF_GRID_FREQUENCY, new UnsignedWordElement(0x4030), ElementToChannelConverter.SCALE_FACTOR_MINUS_2 ),
-						this.m(HycubeEss.ChannelId.LOAD_OUTPUT_CURRENT_L1, new UnsignedWordElement(0x4031)),
-						new DummyRegisterElement(0x4032, 0x4033),
-						this.m(HycubeEss.ChannelId.LOAD_OUTPUT_POWER_FACTOR, new SignedWordElement(0x4034)),
-						this.m(HycubeEss.ChannelId.LOAD_POWER_L1, new SignedWordElement(0x4035)),
-						this.m(HycubeEss.ChannelId.LOAD_REACTIVE_POWER_L1, new SignedWordElement(0x4036)),
-						this.m(HycubeEss.ChannelId.LOAD_APPARENT_POWER_L1, new SignedWordElement(0x4037))						
-						),
-		new FC3ReadRegistersTask(0x4046, Priority.LOW, //
-				this.m(HycubeEss.ChannelId.STATUS_WORD_4046, new UnsignedWordElement(0x4046)),
-				this.m(HycubeEss.ChannelId.STATUS_WORD_4047, new UnsignedWordElement(0x4047)),
-				new DummyRegisterElement(0x4048, 0x404A),
-				this.m(HycubeEss.ChannelId.STATUS_WORD_404B, new UnsignedWordElement(0x404B))
-				),
-		// Write sleep/wake register
-		new FC6WriteRegisterTask(0x405a,
-				m(HycubeEss.ChannelId.SET_TARGET_BATTERY_POWER, new SignedWordElement(0x405a))),
-		new FC6WriteRegisterTask(0x405C,  //
-				this.m(HycubeEss.ChannelId.FINAL_CHARGING_VOLTAGE, new UnsignedWordElement(0x405C))),
+		return readStatusWordsTask;
+	}
+	
+	public FC3ReadRegistersTask getReadSerialNumberTask()
+	{
+		return readSerialNumberTask;
+	}
 
-		new FC6WriteRegisterTask(0x405D,  //
-				this.m(HycubeEss.ChannelId.FINAL_DISCHARGING_VOLTAGE, new UnsignedWordElement(0x405D))),
-
-		new FC6WriteRegisterTask(0x4058,
-				m(HycubeEss.ChannelId.SET_MAX_CHARGE_CURRENT, new UnsignedWordElement(0x4058))),
-		
-		new FC6WriteRegisterTask(0x4059,
-				m(HycubeEss.ChannelId.SET_MAX_DISCHARGE_CURRENT, new UnsignedWordElement(0x4059))));
+	public FC3ReadRegistersTask getReadRuntimeValuesTask()
+	{
+		return readRuntimeValuesTask;
 	}
 	
 	@Override
 	protected ModbusProtocol defineModbusProtocol() {
-		if( needsInit.get() )
-		{
-			return getStartupModbusProtocol();
-		}
-		else
-		{
-			return getRuntimeModbusProtocol();
-		}
+		
+		stateMachine.forceNextState( State.UNDEFINED );
+		
+		return getModbusProtocol();
 	}
 
+	public ModbusProtocol getModbusProtocol()
+	{
+		return modbusProtocol;
+	}
+	
 	@Override
 	public ModbusSlaveTable getModbusSlaveTable(AccessMode accessMode) {
 		return new ModbusSlaveTable(//
@@ -1260,12 +1232,15 @@ public class HycubeEssImpl extends AbstractOpenemsModbusComponent
 		
 		IntegerWriteChannel wrChannel = this.channel(HycubeEss.ChannelId.SET_TARGET_BATTERY_POWER);
 		
-		if( recentSetPowerTargetValue == null || recentSetPowerTargetValue != power )
+		if( stateMachine.getCurrentState() == State.RUNNING )
 		{
-			recentSetPowerTargetValue = power;
-			
-			wrChannel.setNextWriteValue(power);
-			wrChannel.setNextValue(power);
+			if( recentSetPowerTargetValue == null || recentSetPowerTargetValue != power )
+			{
+				recentSetPowerTargetValue = power;
+				
+				wrChannel.setNextWriteValue(power);
+				wrChannel.setNextValue(power);
+			}
 		}
 	}
 
@@ -1274,38 +1249,12 @@ public class HycubeEssImpl extends AbstractOpenemsModbusComponent
 		return battery;
 	}
 
-	public boolean needsInitialization()
-	{
-		return needsInit.get();
-	}
-	
 	public void initializationDone()
 	{
-		if( needsInit.get() )
-		{
-			needsInit.set( Boolean.FALSE );
+		getModbusProtocol().addTask( readStatusWordsTask );
+		getModbusProtocol().addTask( readRuntimeValuesTask );
 			
-			for( InitValidation validation : getInitChannelList() )
-			{
-				Optional<?> opt = channel( validation.getChannelId() ).value().asOptional();
-				
-				if( opt.isPresent() )
-				{
-					validation.setActualValue( opt.get() );
-				}
-				else
-				{
-					validation.setActualValue(null);
-				}
-			}
-			getBridgeModbus().removeProtocol( id() );
-			getBridgeModbus().addProtocol( id(), getRuntimeModbusProtocol() );
-			
-			doSetChannelsAfterInit = true;
-		}
-		
-		setMaxChargeCurrent(0);
-		setMaxDishargeCurrent(0);
+		doSetChannelsAfterInit = true;
 		
 		recentSetPowerTargetValue = null;
 		recentSetMaxChargeCurrentValue = null;
@@ -1316,6 +1265,12 @@ public class HycubeEssImpl extends AbstractOpenemsModbusComponent
 		logDebug( log, "Initialization done" );
 	}
 	
+	public void setSoftStart( boolean i_onOff )
+	{
+		logDebug( log, "switch Remote Acces Unit " + ( i_onOff ? "on" : "off") );
+		digOutBoard.digitalOutputChannels()[ 5 ].setNextValue( i_onOff );
+	}
+
 	public void connectBattery()
 	{
 		logDebug( log, "switch Remote Acces Unit on" );
@@ -1328,8 +1283,8 @@ public class HycubeEssImpl extends AbstractOpenemsModbusComponent
 		try
 		{
 			_setBatteryPowerTargetValue(0);
-			setMaxChargeCurrent(0);
-			setMaxDishargeCurrent(0);
+			setMaxChargeCurrent(0, true );
+			setMaxDishargeCurrent(0, true );
 		}
 		catch( Exception ex )
 		{
@@ -1341,9 +1296,18 @@ public class HycubeEssImpl extends AbstractOpenemsModbusComponent
 	
 	private void seSetInitChannelValues()
 	{
-		for( InitValidation validation : getInitChannelList() )
+		for( InitValidation validation : getInitChannelListBeforeSwitch() )
 		{
-			Object obj = validation.getActualValue();
+			Object obj = validation.getInitialValue();
+			
+			if( obj != null )
+			{
+				channel( validation.getChannelId() ).setNextValue( obj );
+			}
+		}
+		for( InitValidation validation : getInitChannelListAfterSwitch() )
+		{
+			Object obj = validation.getInitialValue();
 			
 			if( obj != null )
 			{
@@ -1353,16 +1317,25 @@ public class HycubeEssImpl extends AbstractOpenemsModbusComponent
 		doSetChannelsAfterInit = false;
 	}
 	
-	public InitValidation[] getInitChannelList()
+	public InitValidation[] getInitChannelListBeforeSwitch()
 	{
-		return INIT_CHANNEL_LIST;
+		return INIT_CHANNEL_LIST_BEFORE_SWITCH;
 	}
 	
-	public void resetInitChannelList()
+	public InitValidation[] getInitChannelListAfterSwitch()
 	{
-		for( InitValidation element : INIT_CHANNEL_LIST )
-		{
-			element.reset();
-		}
+		return INIT_CHANNEL_LIST_AFTER_SWITCH;
 	}
+
+	public InitValidation[] getCompleteInitChannelList()
+	{
+		InitValidation[] result = new InitValidation[ INIT_CHANNEL_LIST_BEFORE_SWITCH.length + INIT_CHANNEL_LIST_AFTER_SWITCH.length ];
+		
+		System.arraycopy( INIT_CHANNEL_LIST_BEFORE_SWITCH, 0, result, 0, INIT_CHANNEL_LIST_BEFORE_SWITCH.length );
+
+		System.arraycopy( INIT_CHANNEL_LIST_AFTER_SWITCH, 0, result, INIT_CHANNEL_LIST_BEFORE_SWITCH.length, INIT_CHANNEL_LIST_AFTER_SWITCH.length );
+		
+		return result;
+	}
+
 }

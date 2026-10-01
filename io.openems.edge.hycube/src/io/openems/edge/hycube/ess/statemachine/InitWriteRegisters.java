@@ -15,22 +15,26 @@ import io.openems.edge.hycube.ess.statemachine.StateMachine.State;
  *
  * <p>
  */
-public class InitBatteryHandler extends StateHandler<State, Context> {
+public class InitWriteRegisters extends StateHandler<State, Context> {
+
+
 	private Instant entryAt = Instant.MIN;
 	
-	private static final int WAIT_SECONDS = 10;
+	private int index = 0;
 	
-	private boolean batteryStarted = false;
+	private static final int WAIT_TIME = 10;
 	
 	@Override
 	protected void onEntry(Context context) throws OpenemsNamedException {
 		this.entryAt = Instant.now();
-		batteryStarted = false;
+		index = 0;
+
 	}
+
 
 	@Override
 	protected String debugLog() {
-		return State.INIT_BATTERY.toString();
+		return State.INIT_WRITE_REGISTERS.toString();
 	}
 
 	@Override
@@ -38,24 +42,32 @@ public class InitBatteryHandler extends StateHandler<State, Context> {
 		final HycubeEssImpl ess = context.getParent();
 
 		// Check for faults before proceeding
-		if (ess.hasFaults() || ess.getModbusCommunicationFailed() ) {
+		if (ess.hasFaults() || ess.getBattery().hasFaults() ) {
 			return State.ERROR;
 		}
 
-		if( !batteryStarted )
+		if (Duration.between(this.entryAt, Instant.now()).getSeconds() < WAIT_TIME) {
+			// Try again
+			return State.INIT_WRITE_REGISTERS;
+		}
+
+		InitValidation[] list = ess.getInitChannelListAfterSwitch();
+		
+		if( index >= list.length )
 		{
-			ess.getBattery().start();
-			batteryStarted = true;
-			return State.INIT_BATTERY;
+			return State.REWRITE_REGISTERS;
 		}
 		
-		if (Duration.between(this.entryAt, Instant.now()).getSeconds() > WAIT_SECONDS) {
-			if( ess.getBattery().isStarted() && !ess.getBattery().hasFaults() )
-			{
-				return State.READ_STATUS_WORDS;
-			}
-		}
+		InitValidation validation = list[ index ];
+
+		index = index + 1;
 		
-		return State.INIT_BATTERY;
+		IntegerWriteChannel remoteControlChannel = ess.channel( validation.getChannelId() );
+		
+		remoteControlChannel.setNextWriteValue( validation.getInitialValue() );
+
+		ess.doLogDebug( "Setting write channel " + validation.getChannelId() + ": " + validation.getInitialValue() );
+		
+		return State.INIT_WRITE_REGISTERS;
 	}
 }

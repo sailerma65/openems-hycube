@@ -19,18 +19,8 @@ public class GoRunningHandler extends StateHandler<State, Context> {
 		return State.GO_RUNNING.toString();
 	}
 
-	private Instant entryAt = Instant.MIN;
-	private boolean initializationDone = false;
-	private boolean batteryConnected = false;
-	
-	private static final int WAIT_AFTER_REMOTE_ON = 30;
-
 	@Override
 	protected void onEntry(Context context) throws OpenemsNamedException {
-
-		this.entryAt = Instant.now();
-		this.initializationDone = false;
-		this.batteryConnected = false;
 	}
 
 
@@ -43,21 +33,13 @@ public class GoRunningHandler extends StateHandler<State, Context> {
 			return State.ERROR;
 		}
 
-		if( !initializationDone )
-		{
 			// end of initialization:switches on the CBi RAU (Remote actuator unit with lockout)
 			// - use runtime modbus register list
 			// - 
-			ess.initializationDone();
-			
-			initializationDone = true;
-		}
+		ess.doLogDebug( "Setting runtime modbus protocol and finish startup");
 
-		if (Duration.between(this.entryAt, Instant.now()).getSeconds() > WAIT_AFTER_REMOTE_ON )
-		{
-			return State.RUNNING;
-		}
+		ess.initializationDone();
 
-		return State.GO_RUNNING;
+		return State.RUNNING;
 	}
 }

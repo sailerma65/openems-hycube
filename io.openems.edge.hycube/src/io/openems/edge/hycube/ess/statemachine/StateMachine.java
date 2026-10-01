@@ -9,8 +9,16 @@ public class StateMachine extends AbstractStateMachine<StateMachine.State, Conte
 	public enum State implements io.openems.edge.common.statemachine.State<State>, OptionsEnum {
 		UNDEFINED(-1), //
 		INIT_BATTERY(3),//
-		CHECKING(5),
-		INITIALIZING(6),
+		
+		READ_STATUS_WORDS(4),
+		
+		BEFORE_SWITCH_ON(5),
+		
+		SWITCH_ON(6),
+
+		INIT_WRITE_REGISTERS(8),
+		
+		REWRITE_REGISTERS(9),
 		
 		GO_RUNNING(10), //
 		RUNNING(11), //
@@ -54,8 +62,11 @@ public class StateMachine extends AbstractStateMachine<StateMachine.State, Conte
 		return switch (state) {
 		case UNDEFINED -> new UndefinedHandler();
 		case INIT_BATTERY -> new InitBatteryHandler();
-		case CHECKING -> new CheckingHandler();
-		case INITIALIZING -> new InitializingHandler();
+		case READ_STATUS_WORDS -> new ReadStatusWords();
+		case BEFORE_SWITCH_ON -> new InitBeforeSwitchOn();
+		case SWITCH_ON -> new SwitchBatteryConnection();
+		case INIT_WRITE_REGISTERS -> new InitWriteRegisters();
+		case REWRITE_REGISTERS -> new ReWriteRegisters();
 		case GO_RUNNING -> new GoRunningHandler();
 		case RUNNING -> new RunningHandler();
 		case GO_STOPPED -> new GoStoppedHandler();
