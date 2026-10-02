@@ -4,7 +4,7 @@ import org.osgi.service.metatype.annotations.AttributeDefinition;
 import org.osgi.service.metatype.annotations.ObjectClassDefinition;
 
 @ObjectClassDefinition(//
-		name = "Denkovi 8 Relais Board", //
+		name = "Denkovi 8 USB Relais Board", //
 		description = "switches relais of Denkovi relais board by http commands. Access is handled in a separate HTTP-Server-Process")
 @interface Config {
 

@@ -292,6 +292,19 @@ public class DenkoviRelaisBoardImpl extends AbstractOpenemsComponent
 		@Override
 		@Deactivate
 		protected void deactivate() {
+			if (deviceHandle != null) {
+				LibUsb.releaseInterface(deviceHandle, 0);
+				// Optional: Unter Linux den Treiber wieder anbinden
+				LibUsb.attachKernelDriver(deviceHandle, 0);
+				LibUsb.close(deviceHandle);
+			}
+
+			if (context != null) {
+
+				LibUsb.exit(context);
+
+				context = null;
+			}
 			super.deactivate();
 		}
 
