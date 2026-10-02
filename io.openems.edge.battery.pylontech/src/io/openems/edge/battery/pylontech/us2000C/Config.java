@@ -31,5 +31,8 @@ import io.openems.edge.common.startstop.StartStopConfig;
 	@AttributeDefinition(name = "Debug", description = "Enable debug mode?")
 	boolean debugMode() default false;
 
+	@AttributeDefinition(name = "Stop discharge SOC", description = "Min. state of charge of module")
+	int minDischargeModuleSOC() default 5;
+
 	String webconsole_configurationFactory_nameHint() default "Battery Pylontech US2000C [{id}]";
 }

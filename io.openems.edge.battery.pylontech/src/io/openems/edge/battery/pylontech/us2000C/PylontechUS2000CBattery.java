@@ -8,7 +8,9 @@ import static io.openems.common.types.OpenemsType.INTEGER;
 import static io.openems.common.types.OpenemsType.STRING;
 
 import io.openems.common.channel.Level;
+import io.openems.common.channel.PersistencePriority;
 import io.openems.common.channel.Unit;
+import io.openems.common.types.OpenemsType;
 import io.openems.edge.battery.api.Battery;
 import io.openems.edge.battery.pylontech.us2000C.statemachine.StateMachine.State;
 import io.openems.edge.common.channel.Channel;
@@ -200,6 +202,21 @@ public interface PylontechUS2000CBattery extends Battery, OpenemsComponent, Star
 				.unit(Unit.DEZIVOLT)),
 		STATE_MACHINE(Doc.of(State.values()) //
 				.text("Current state of state machine")),
+		
+		PY_MIN_SOC(Doc.of(OpenemsType.INTEGER) //
+				.accessMode(READ_ONLY) //
+				.unit(Unit.PERCENT)),
+		
+		PY_MAX_SOC(Doc.of(OpenemsType.INTEGER) //
+				.accessMode(READ_ONLY) //
+				.unit(Unit.PERCENT)),
+
+		PY_CHARGE_ENABLE(Doc.of(OpenemsType.BOOLEAN) //
+				.accessMode(READ_ONLY)), //
+		
+		PY_DISCHARGE_ENABLE(Doc.of(OpenemsType.BOOLEAN) //
+				.accessMode(READ_ONLY)), //
+
 		RUN_FAILED(Doc.of(Level.FAULT) //
 				.text("Running the Logic failed")) //
 		;
@@ -289,6 +306,32 @@ public interface PylontechUS2000CBattery extends Battery, OpenemsComponent, Star
 		return this.channel(ChannelId.PY_BATTERY_VOLTAGE );
 	}
 
+	public default Channel<Integer> getPylontechBatteryMinModuleSocChannel() {
+		return this.channel(ChannelId.PY_MIN_SOC );
+	}
+
+	public default Channel<Integer> getPylontechBatteryMaxModuleSocChannel() {
+		return this.channel(ChannelId.PY_MAX_SOC );
+	}
+
+	public default Channel<Boolean> getPylontechBatteryChargeEnable() {
+		return this.channel(ChannelId.PY_CHARGE_ENABLE );
+	}
+
+	public default Channel<Boolean> getPylontechBatteryDischargeEnable() {
+		return this.channel(ChannelId.PY_DISCHARGE_ENABLE );
+	}
+
+	public default Integer getPylontechBatteryMinModuleSoc()
+	{
+		return getPylontechBatteryMinModuleSocChannel().value().orElse(0);
+	}
+	
+	public default Integer getPylontechBatteryMaxModuleSoc()
+	{
+		return getPylontechBatteryMaxModuleSocChannel().value().orElse(0);
+	}
+	
 	public default Integer getMaxChargeCurrent()
 	{
 		return getMaxChargeCurrentChannel().value().orElse(0);

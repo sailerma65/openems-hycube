@@ -339,6 +339,8 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 		
 		if( newModuleValue && infoAvailable( m_moduleValues ) )
 		{
+			double minStateOfCharge = Double.MAX_VALUE;
+			double maxStateOfCharge = Double.MIN_VALUE;
 			double stateOfCharge = 0;
 			double voltage = Double.MAX_VALUE;
 			double current = 0;
@@ -355,7 +357,10 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 			
 			for( int i = 0; i < m_numberOfDevices; i++ )
 			{
-				stateOfCharge += m_moduleValues[ i ].stateOfCharge();
+				double moduleStateOfCharge = m_moduleValues[ i ].stateOfCharge();
+				minStateOfCharge = Math.min( minStateOfCharge, moduleStateOfCharge );
+				maxStateOfCharge = Math.max( maxStateOfCharge, moduleStateOfCharge );
+				stateOfCharge += moduleStateOfCharge;
 				voltage = Math.min( m_moduleValues[ i ].voltage(), voltage );
 				current = current + m_moduleValues[ i ].current();
 				
@@ -415,6 +420,10 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 			
 			channel( Battery.ChannelId.SOC ).setNextValue( ( int )( stateOfCharge * 100 ) );
 			
+			getPylontechBatteryMinModuleSocChannel().setNextValue( ( int )( minStateOfCharge * 100 ) );
+			
+			getPylontechBatteryMaxModuleSocChannel().setNextValue( ( int )( maxStateOfCharge * 100 ) );
+
 			channel( Battery.ChannelId.VOLTAGE ).setNextValue( ( int )voltage );
 			
 			getPylontechBatteryVoltageChannel().setNextValue( ( int )( voltage * 10 ) );
@@ -443,7 +452,7 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 			double dischargeVoltage = 0.0;
 
 			boolean chargeEnable = true;
-			boolean dichargeEnable = true;
+			boolean dischargeEnable = true;
 			
 			for( int i = 0; i < m_numberOfDevices; i++ )
 			{
@@ -459,14 +468,24 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 				}
 				if( !m_managementInfos[ i ].dischargeEnable() )
 				{
-					dichargeEnable = false;
+					dischargeEnable = false;
 				}
 
 			}
 
 			protectionDef._setChargeAllowed(chargeEnable);
-			protectionDef._setDischargeAllowed(dichargeEnable);
 			
+			getPylontechBatteryChargeEnable().setNextValue( chargeEnable );
+			
+			if( getPylontechBatteryMinModuleSoc() < config.minDischargeModuleSOC() )
+			{
+				dischargeEnable = false;
+			}
+			
+			protectionDef._setDischargeAllowed(dischargeEnable);
+			
+			getPylontechBatteryDischargeEnable().setNextValue( dischargeEnable );
+
 			channel( BatteryProtection.ChannelId.BP_CHARGE_BMS ).setNextValue( ( int )chargeCurrent );
 			channel( BatteryProtection.ChannelId.BP_DISCHARGE_BMS ).setNextValue( ( int )dischargeCurrent );
 
