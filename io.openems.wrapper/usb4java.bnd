@@ -1,0 +1,26 @@
+Bundle-Name: usb4java
+Bundle-Description: OpenEMS Wrapper für javax.usb und usb4java
+Bundle-Version: 1.3.0
+
+# 3. Alle drei JAR-Inhalte direkt in dieses eine OSGi-Bundle verschmelzen (Inlining)
+Include-Resource: \
+	@usb4java/usb4java-1.3.0.jar,\
+	@usb4java/libusb4java-1.3.0-linux-aarch64.jar,\
+	@usb4java/libusb4java-1.3.0-win32-x86-64.jar
+
+-dsannotations: *
+
+-metatypeannotations: *
+
+# Verhindert, dass Bnd nach externen OSGi-Importen für diese internen Klassen sucht
+DynamicImport-Package: *
+
+Export-Package: \
+    org.usb4java.*,\
+
+-sources: false
+
+
+#@usb4java/usb4java-javax-1.3.0.jar,\
+#@usb4java/usb-api-1.0.2.jar,\
+#@usb4java/commons-lang3-3.8.1.jar,\
