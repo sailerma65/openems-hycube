@@ -46,8 +46,8 @@ import io.openems.edge.common.component.OpenemsComponent;
     property = {
             "osgi.http.whiteboard.context.select=(osgi.http.whiteboard.context.name=org.osgi.service.http)",
     		   "felix.webconsole.label=batteryInfo",
-    		    "felix.webconsole.title=Batterie Info",
-    		    "felix.webconsole.category=Diagnose"    }
+    		    "felix.webconsole.title=Battery Info",
+    		    "felix.webconsole.category=Status"    }
 )
 public class PylontechUS2000CInfo extends HttpServlet implements Servlet, OpenemsComponent {
 

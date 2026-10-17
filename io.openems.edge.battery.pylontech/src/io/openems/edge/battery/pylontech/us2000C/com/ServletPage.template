@@ -187,10 +187,10 @@
 
     <!-- Hauptinhalt -->
     <main>
-        <h1 id="content-title">Wähle eine Information aus dem Menü</h1>
+        <h1 id="content-title">Chosose from menu...</h1>
         
         <!-- Bereich für die Visualisierung -->
-        <div id="json-container">JSON-Daten erscheinen nach der Auswahl eines Menüpunkts.</div>
+        <div id="json-container">JSON Objects will appear after choosing a menu entry.</div>
     </main>
 
     <script>
