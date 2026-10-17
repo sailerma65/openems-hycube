@@ -9,7 +9,7 @@ import io.openems.edge.common.statemachine.StateHandler;
 
 public class StartCommHandler extends StateHandler<State, Context> {
 	private Instant entryAt = Instant.MIN;
-	private static final int WAIT_SECONDS = 10;
+	private static final int WAIT_SECONDS = 30;
 
 	@Override
 	protected void onEntry(Context context) throws OpenemsNamedException {

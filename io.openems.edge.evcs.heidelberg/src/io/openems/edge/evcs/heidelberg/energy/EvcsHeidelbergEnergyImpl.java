@@ -34,9 +34,12 @@ import io.openems.edge.bridge.modbus.api.element.UnsignedWordElement;
 import io.openems.edge.bridge.modbus.api.element.WordOrder;
 import io.openems.edge.bridge.modbus.api.task.FC4ReadInputRegistersTask;
 import io.openems.edge.bridge.modbus.api.task.FC6WriteRegisterTask;
+import io.openems.edge.common.channel.IntegerReadChannel;
+import io.openems.edge.common.channel.IntegerWriteChannel;
 import io.openems.edge.common.component.ComponentManager;
 import io.openems.edge.common.component.OpenemsComponent;
 import io.openems.edge.common.event.EdgeEventConstants;
+import io.openems.edge.common.sum.GridMode;
 import io.openems.edge.common.taskmanager.Priority;
 import io.openems.edge.evcs.api.CalculateEnergySession;
 import io.openems.edge.evcs.api.ChargeStateHandler;
@@ -132,9 +135,43 @@ public class EvcsHeidelbergEnergyImpl extends AbstractOpenemsModbusComponent imp
 		this.getMinimumHardwarePowerChannel().setNextValue(min);
 		this.getMaximumHardwarePowerChannel().setNextValue(max);
 
+//		calculatePhasePower( ElectricityMeter.ChannelId.CURRENT_L1, ElectricityMeter.ChannelId.VOLTAGE_L1, ElectricityMeter.ChannelId.ACTIVE_POWER_L1 );
+//		calculatePhasePower( ElectricityMeter.ChannelId.CURRENT_L2, ElectricityMeter.ChannelId.VOLTAGE_L2, ElectricityMeter.ChannelId.ACTIVE_POWER_L2 );
+//		calculatePhasePower( ElectricityMeter.ChannelId.CURRENT_L3, ElectricityMeter.ChannelId.VOLTAGE_L3, ElectricityMeter.ChannelId.ACTIVE_POWER_L3 );
+
 		_setPowerPrecision( 1.0 );
 	}
 
+	private void calculatePhasePower( io.openems.edge.common.channel.ChannelId currentChannelId, io.openems.edge.common.channel.ChannelId voltageChannelId, 
+			io.openems.edge.common.channel.ChannelId powerChannelId )
+	{
+		IntegerReadChannel voltageChannel = channel( voltageChannelId );
+		IntegerReadChannel currentChannel = channel( currentChannelId );
+		IntegerWriteChannel powerChannel = channel( powerChannelId );
+		
+		voltageChannel.onChange( ( oldValue, newValue ) -> 
+		{
+			int voltage = newValue.get();
+			
+			int current = currentChannel.value().orElse(0);
+			
+			int power = voltage * current;
+			
+			powerChannel.setNextValue( power );
+		} );
+
+		currentChannel.onChange( ( oldValue, newValue ) -> 
+		{
+			int current = newValue.get();
+			
+			int voltage = voltageChannel.value().orElse(0);
+			
+			int power = voltage * current;
+			
+			powerChannel.setNextValue( power );
+		} );
+	}
+	
 	@Override
 	@Deactivate
 	protected void deactivate() {
@@ -219,8 +256,8 @@ public class EvcsHeidelbergEnergyImpl extends AbstractOpenemsModbusComponent imp
 						m(phaseRotated.channelVoltageL3(), new UnsignedWordElement(offset + 12), SCALE_FACTOR_3), //
 						m(EvcsHeidelbergEnergy.ChannelId.EXTERNAL_LOCK_STATE, new UnsignedWordElement(offset + 13)), //
 						m(ElectricityMeter.ChannelId.ACTIVE_POWER, new UnsignedWordElement(offset + 14)),
-						m(EvcsHeidelbergEnergy.ChannelId.ENERGY_SINCE_POWER_ON, new UnsignedDoublewordElement(offset + 15).wordOrder(WordOrder.LSWMSW)),
-						m(ElectricityMeter.ChannelId.ACTIVE_PRODUCTION_ENERGY, new UnsignedDoublewordElement(offset + 17).wordOrder(WordOrder.LSWMSW))
+						m(EvcsHeidelbergEnergy.ChannelId.ENERGY_SINCE_POWER_ON, new UnsignedDoublewordElement(offset + 15).wordOrder(WordOrder.MSWLSW)),
+						m(ElectricityMeter.ChannelId.ACTIVE_PRODUCTION_ENERGY, new UnsignedDoublewordElement(offset + 17).wordOrder(WordOrder.MSWLSW))
 						
 						), //
 				new FC6WriteRegisterTask(offset + 257, //

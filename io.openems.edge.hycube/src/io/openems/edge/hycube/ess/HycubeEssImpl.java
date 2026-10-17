@@ -10,7 +10,6 @@ import static org.osgi.service.component.annotations.ReferenceCardinality.OPTION
 import static org.osgi.service.component.annotations.ReferencePolicy.STATIC;
 import static org.osgi.service.component.annotations.ReferencePolicyOption.GREEDY;
 
-import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
@@ -446,7 +445,28 @@ public class HycubeEssImpl extends AbstractOpenemsModbusComponent
 				setMaxDishargeCurrent( value.get(), false );
 			} );
 		}
+		else
+		{
+			battery.getChargeMaxVoltageChannel().onSetNextValue( value -> 
+			{
+				setMaxChargingVoltage( value.get() * 10, false );
+			} );
+			
+			battery.getChargeMaxCurrentChannel().onSetNextValue( value -> 
+			{
+				setMaxChargeCurrent( value.get() * 10, false );
+			} );
 
+			battery.getDischargeMinVoltageChannel().onSetNextValue( value -> 
+			{
+				setMinDischargingVoltage( value.get() * 10, false );
+			} );
+
+			battery.getDischargeMaxCurrentChannel().onSetNextValue( value -> 
+			{
+				setMaxDishargeCurrent( value.get() * 10, false );
+			} );
+		}
 		
 		IntegerReadChannel activePowerChannel = this.channel(SymmetricEss.ChannelId.ACTIVE_POWER );
 		
@@ -621,16 +641,8 @@ public class HycubeEssImpl extends AbstractOpenemsModbusComponent
 		}
 
 		
-		if( this.battery instanceof PylontechUS2000CBattery pylonBattery )
-		{
-			this.batteryMaxChargePower = pylonBattery.getPylontechBatteryVoltage() * pylonBattery.getMaxChargeCurrent() / 100;
-			this.batteryMaxDischargePower = pylonBattery.getPylontechBatteryVoltage() * pylonBattery.getMaxDischargeCurrent() / 100;
-		}
-		else
-		{
-			this.batteryMaxChargePower = this.battery.getVoltage().orElse(0) * this.battery.getChargeMaxCurrent().orElse(0);
-			this.batteryMaxDischargePower = this.battery.getVoltage().orElse(0) * this.battery.getDischargeMaxCurrent().orElse(0);
-		}
+		this.batteryMaxChargePower = this.battery.getVoltage().orElse(0) * this.battery.getChargeMaxCurrent().orElse(0);
+		this.batteryMaxDischargePower = this.battery.getVoltage().orElse(0) * this.battery.getDischargeMaxCurrent().orElse(0);
 
 		return true;
 	}

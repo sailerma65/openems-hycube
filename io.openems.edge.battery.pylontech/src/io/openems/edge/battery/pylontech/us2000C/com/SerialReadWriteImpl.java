@@ -158,6 +158,7 @@ public class SerialReadWriteImpl extends AbstractOpenemsComponent implements Ser
 				
 				if( serialPort != null && portName.equals(savedPortName))
 				{
+					@SuppressWarnings("unused")
 					int err = serialPort.getLastErrorCode();
 					serialPort.closePort();
 				}

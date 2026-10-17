@@ -44,7 +44,8 @@ public interface PylontechUS2000CBattery extends Battery, OpenemsComponent, Star
 		// 3.4 System Information
 
 		BASIC_STATUS(Doc.of(Status.values()) //
-				.accessMode(READ_ONLY) //
+				.accessMode(READ_ONLY)
+				.persistencePriority(PersistencePriority.HIGH)
 				.text("System status. 00=Sleep, 01=Charge, 02=Discharge")),
 		SYSTEM_ERROR_PROTECTION(Doc.of(Level.FAULT) //
 				.accessMode(READ_ONLY) //
@@ -169,10 +170,12 @@ public interface PylontechUS2000CBattery extends Battery, OpenemsComponent, Star
 		MODULE_HIGH_VOLTAGE_WARNING(Doc.of(Level.WARNING) //
 				.accessMode(READ_ONLY) //
 				.text("Module high voltage warning")),
-		CHARGE_ENABLE(Doc.of(BOOLEAN) //
+		CHARGE_ENABLE(Doc.of(BOOLEAN)
+				.persistencePriority(PersistencePriority.HIGH) //
 				.accessMode(READ_ONLY) //
 				.text("Charge enable")),
 		DISCHARGE_ENABLE(Doc.of(BOOLEAN) //
+				.persistencePriority(PersistencePriority.HIGH) //
 				.accessMode(READ_ONLY) //
 				.text("Discharge enable")),
 		SYSTEM_TEMPERATURE(Doc.of(INTEGER) //
@@ -192,29 +195,29 @@ public interface PylontechUS2000CBattery extends Battery, OpenemsComponent, Star
 				.accessMode(READ_ONLY)
 				.unit(Unit.DEZIVOLT)),
 		PY_MAX_CHARGE_CURRENT(Doc.of(INTEGER) //
-				.accessMode(READ_ONLY)
-				.unit(Unit.DEZIAMPERE)),
-		PY_MAX_DISCHARGE_CURRENT(Doc.of(INTEGER) //
-				.accessMode(READ_ONLY)
-				.unit(Unit.DEZIAMPERE)),
+				.unit(Unit.DEZIAMPERE)
+				.persistencePriority(PersistencePriority.HIGH)
+				.accessMode(READ_ONLY)),
+		PY_MAX_DISCHARGE_CURRENT(Doc.of(INTEGER)
+				.unit(Unit.DEZIAMPERE)
+				.persistencePriority(PersistencePriority.HIGH)
+				.accessMode(READ_ONLY)),
 		PY_BATTERY_VOLTAGE(Doc.of(INTEGER) //
-				.accessMode(READ_ONLY)
-				.unit(Unit.DEZIVOLT)),
+				.unit(Unit.DEZIVOLT)
+				.persistencePriority(PersistencePriority.HIGH)
+				.accessMode(READ_ONLY)),
 		STATE_MACHINE(Doc.of(State.values()) //
+				.persistencePriority(PersistencePriority.HIGH)
 				.text("Current state of state machine")),
 		
 		PY_MIN_SOC(Doc.of(OpenemsType.INTEGER) //
-				.accessMode(READ_ONLY) //
-				.unit(Unit.PERCENT)),
-		
-		PY_MAX_SOC(Doc.of(OpenemsType.INTEGER) //
-				.accessMode(READ_ONLY) //
-				.unit(Unit.PERCENT)),
-
-		PY_CHARGE_ENABLE(Doc.of(OpenemsType.BOOLEAN) //
+				.unit(Unit.PERCENT)
+				.persistencePriority(PersistencePriority.HIGH)
 				.accessMode(READ_ONLY)), //
 		
-		PY_DISCHARGE_ENABLE(Doc.of(OpenemsType.BOOLEAN) //
+		PY_MAX_SOC(Doc.of(OpenemsType.INTEGER) //
+				.unit(Unit.PERCENT)
+				.persistencePriority(PersistencePriority.HIGH)
 				.accessMode(READ_ONLY)), //
 
 		RUN_FAILED(Doc.of(Level.FAULT) //
@@ -271,7 +274,7 @@ public interface PylontechUS2000CBattery extends Battery, OpenemsComponent, Star
 	 * 
 	 * @return The BASIC_STATUS channel
 	 */
-	public default Channel<Boolean> getDishargeEnabledChannel() {
+	public default Channel<Boolean> getDischargeEnabledChannel() {
 		return this.channel(ChannelId.DISCHARGE_ENABLE);
 	}
 	
@@ -282,7 +285,7 @@ public interface PylontechUS2000CBattery extends Battery, OpenemsComponent, Star
 
 	public default boolean isDischargeEnabled()
 	{
-		return getDishargeEnabledChannel().value().orElse(Boolean.FALSE);
+		return getDischargeEnabledChannel().value().orElse(Boolean.FALSE);
 	}
 
 	
@@ -312,14 +315,6 @@ public interface PylontechUS2000CBattery extends Battery, OpenemsComponent, Star
 
 	public default Channel<Integer> getPylontechBatteryMaxModuleSocChannel() {
 		return this.channel(ChannelId.PY_MAX_SOC );
-	}
-
-	public default Channel<Boolean> getPylontechBatteryChargeEnable() {
-		return this.channel(ChannelId.PY_CHARGE_ENABLE );
-	}
-
-	public default Channel<Boolean> getPylontechBatteryDischargeEnable() {
-		return this.channel(ChannelId.PY_DISCHARGE_ENABLE );
 	}
 
 	public default Integer getPylontechBatteryMinModuleSoc()
@@ -356,4 +351,8 @@ public interface PylontechUS2000CBattery extends Battery, OpenemsComponent, Star
 	{
 		return getPylontechBatteryVoltageChannel().value().orElse(0);
 	}
+	
+	public String getJsonInfo( int cmd, int addr );
+	
+	public int getParallelDevices();
 }

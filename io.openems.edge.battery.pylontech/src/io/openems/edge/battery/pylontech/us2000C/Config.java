@@ -25,9 +25,6 @@ import io.openems.edge.common.startstop.StartStopConfig;
 	@AttributeDefinition(name = "Serial interface", description = "Serial interface identifier")
 	String serialInterfaceId() default "";
 
-	@AttributeDefinition(name = "Parallel Devices", description = "Number of devices in parallel")
-	int devicesInParallel() default 4;
-
 	@AttributeDefinition(name = "Debug", description = "Enable debug mode?")
 	boolean debugMode() default false;
 

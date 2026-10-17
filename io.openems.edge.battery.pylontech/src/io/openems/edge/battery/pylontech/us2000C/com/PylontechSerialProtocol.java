@@ -21,20 +21,33 @@ public class PylontechSerialProtocol {
 	public static final long FACTOR_MILLI_TO_NANO = 1000000l;
 
 	public static enum CMD_DESCRIPTORS {
-		CMD_GET_ANALOG_VALUE(0x42), CMD_GET_ALARM_INFO(0x44), CMD_GET_SYSTEM_PARAMETERS(0x47),
-		CMD_GET_PROTOCOL_VERSION(0x4F), CMD_GET_MANUFACTURER_INFO(0x51), CMD_GET_MANAGEMENT_INFO(0x92),
-		CMD_GET_SERIAL_NUMBER(0x93), CMD_SET_CHARGE_DISCHARGE_MANAGEMENT(0x94), CMD_TURNOFF(0x95),
+		CMD_GET_ANALOG_VALUE(0x42,"getAnalogValue"), CMD_GET_ALARM_INFO(0x44,"getAlarmInfo"), CMD_GET_SYSTEM_PARAMETERS(0x47),
+		CMD_GET_PROTOCOL_VERSION(0x4F), CMD_GET_MANUFACTURER_INFO(0x51,"getManufacturerInfo"), CMD_GET_MANAGEMENT_INFO(0x92,"getManagementInfo"),
+		CMD_GET_SERIAL_NUMBER(0x93,"getSerialNumber"), CMD_SET_CHARGE_DISCHARGE_MANAGEMENT(0x94), CMD_TURNOFF(0x95),
 		CMD_GET_FIRMWARE_INFO(0x96), CMD_RETRIEVE_BATT_BASIC_INFO(0x60), CMD_GET_SYSTEM_ANALOG_DATA(0x61),
 		CMD_GET_SYSTEM_ALARM_INFO(0x62), CMD_GET_SYSTEM_CHARGE_DISCHARGE_MANAGEMENT(0x63), CMD_SYSTEM_SHUTDOWN(0x64);
 
 		private int cmd;
 
+		private final String queryName;
+		
 		private CMD_DESCRIPTORS(int _cmd) {
 			cmd = _cmd;
+			queryName = null;
+		}
+
+		private CMD_DESCRIPTORS(int _cmd, String _queryName) {
+			cmd = _cmd;
+			queryName = _queryName;
 		}
 
 		public int getCmd() {
 			return cmd;
+		}
+		
+		public String getQueryName()
+		{
+			return queryName;
 		}
 	}
 
@@ -365,6 +378,7 @@ public class PylontechSerialProtocol {
 		return out;
 	}
 
+	@SuppressWarnings("unused")
 	private static String bytesToHex(byte[] i_bytes) {
 		StringBuilder result = new StringBuilder(i_bytes.length * 2);
 

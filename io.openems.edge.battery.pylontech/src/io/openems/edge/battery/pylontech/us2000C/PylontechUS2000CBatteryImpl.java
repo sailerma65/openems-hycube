@@ -103,7 +103,9 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 	
 	static final int PY_START_ADDRESS = 2;
 	
-	private int m_numberOfDevices;
+	static final int PY_MAX_DEVICES = 16;
+	
+	private int m_numberOfDevices = 0;
 	
 	private PylontechUS2000CBatteryProtectionDefinition protectionDef;
 	
@@ -113,20 +115,11 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 
 		super.activate(context, config.id(), config.alias(), config.enabled() );
 
-		m_worker.setParallelDevices( config.devicesInParallel() );
-		
 		m_worker.setSerialInterface(serialConnection);
 		
 		m_worker.activate( config.id() + "Worker" );
 
-		m_numberOfDevices = this.config.devicesInParallel();
-		
-		int _initBmsMaxEverCharge = m_numberOfDevices * 25;
-		int _initBmsMaxEverDischarge = m_numberOfDevices * 25;
-		int _maxIncreasePerSecond = m_numberOfDevices * 5;
-		
-		protectionDef = new PylontechUS2000CBatteryProtectionDefinition( 
-				_initBmsMaxEverCharge, _initBmsMaxEverDischarge, _maxIncreasePerSecond );
+		protectionDef = new PylontechUS2000CBatteryProtectionDefinition( 0, 0, 0 );
 		
 		// TODO Protection-Werte abhängig von devicesInParallel
 		// maxEverCharge, maxEverDischarge, increasePerSecond
@@ -266,6 +259,17 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 		
 		boolean communicationError = m_worker.hasCommunicationError();
 		
+		if( m_worker.getDeviceCount() != m_numberOfDevices )
+		{
+			m_numberOfDevices = m_worker.getDeviceCount();
+			
+			int _initBmsMaxEverCharge = m_numberOfDevices * 25;
+			int _initBmsMaxEverDischarge = m_numberOfDevices * 25;
+			int _maxIncreasePerSecond = m_numberOfDevices * 5;
+			
+			protectionDef = new PylontechUS2000CBatteryProtectionDefinition( _initBmsMaxEverCharge, _initBmsMaxEverDischarge, _maxIncreasePerSecond );
+		}
+		
 		channel(PylontechUS2000CBattery.ChannelId.COMMUNICATION_ERROR).setNextValue(communicationError);
 		
 		if( communicationError )
@@ -292,28 +296,28 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 			switch( receivedData.cmd )
 			{
 			case CMD_GET_SERIAL_NUMBER:
-				String serialNumber = PylontechSerialProtocol.parseModuleSerialNumber( receivedData.frame.info() );
+				String serialNumber = receivedData.getData();
 				
 				m_serialNumbers[ receivedData.address - PY_START_ADDRESS ] = serialNumber;
-
+				
 				newSerialNumber = true;
 				break;
 			case CMD_GET_MANUFACTURER_INFO:
-				PylontechSerialProtocol.ManufacturerInfo manufacturerInfo = PylontechSerialProtocol.parseManufacturerInfo(receivedData.frame.info());
+				PylontechSerialProtocol.ManufacturerInfo manufacturerInfo = receivedData.getData();
 				
 				m_manufacturerInfos[ receivedData.address - PY_START_ADDRESS ] = manufacturerInfo;
 				
 				newManufacturerInfo = true;
 				break;
 			case CMD_GET_ALARM_INFO:
-				PylontechSerialProtocol.AlarmInfo alarmInfo = PylontechSerialProtocol.parseAlarm(receivedData.frame.info());
+				PylontechSerialProtocol.AlarmInfo alarmInfo = receivedData.getData();
 				
 				m_alarmInfos[ receivedData.address - PY_START_ADDRESS ] = alarmInfo;
 
 				newAlarmInfo = true;
 				break;
 			case CMD_GET_ANALOG_VALUE:
-				PylontechSerialProtocol.ModuleValues moduleValues = PylontechSerialProtocol.parseValuesSingle(receivedData.frame.info());
+				PylontechSerialProtocol.ModuleValues moduleValues = receivedData.getData();
 
 				m_moduleValues[ receivedData.address - PY_START_ADDRESS ] = moduleValues;
 
@@ -321,7 +325,7 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 				
 				break;
 			case CMD_GET_MANAGEMENT_INFO:
-				PylontechSerialProtocol.ManagementInfo managementInfo = PylontechSerialProtocol.parseManagementInfo(receivedData.frame.info());
+				PylontechSerialProtocol.ManagementInfo managementInfo = receivedData.getData();
 
 				m_managementInfos[ receivedData.address - PY_START_ADDRESS ] = managementInfo;
 
@@ -416,7 +420,14 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 			
 			channel( PylontechUS2000CBattery.ChannelId.BASIC_STATUS ).setNextValue( basicStatus );
 			
-			stateOfCharge /= m_numberOfDevices;
+			if( m_numberOfDevices > 0 )
+			{
+				stateOfCharge /= m_numberOfDevices;
+			}
+			else
+			{
+				stateOfCharge = 0;
+			}
 			
 			channel( Battery.ChannelId.SOC ).setNextValue( ( int )( stateOfCharge * 100 ) );
 			
@@ -475,7 +486,7 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 
 			protectionDef._setChargeAllowed(chargeEnable);
 			
-			getPylontechBatteryChargeEnable().setNextValue( chargeEnable );
+			getChargeEnabledChannel().setNextValue( chargeEnable );
 			
 			if( getPylontechBatteryMinModuleSoc() < config.minDischargeModuleSOC() )
 			{
@@ -484,7 +495,7 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 			
 			protectionDef._setDischargeAllowed(dischargeEnable);
 			
-			getPylontechBatteryDischargeEnable().setNextValue( dischargeEnable );
+			getDischargeEnabledChannel().setNextValue( dischargeEnable );
 
 			channel( BatteryProtection.ChannelId.BP_CHARGE_BMS ).setNextValue( ( int )chargeCurrent );
 			channel( BatteryProtection.ChannelId.BP_DISCHARGE_BMS ).setNextValue( ( int )dischargeCurrent );
@@ -630,4 +641,19 @@ MODULE_HIGH_TEMPERATURE_WARNING
 			this.logError(this.log, "StateMachine failed: " + e.getMessage());
 		}
 	}
+
+
+	@Override
+	public String getJsonInfo(int cmd, int addr ) {
+		return m_worker.getJsonData(cmd, addr);
+	}
+
+
+	@Override
+	public int getParallelDevices() {
+		// TODO Auto-generated method stub
+		return m_numberOfDevices;
+	}
+	
+	
 }

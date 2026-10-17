@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Geräte-Dashboard (JSON)</title>
+    <style>
+        /* Allgemeine Stile */
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f4f6f9;
+            color: #333;
+        }
+
+        /* Oberes Auswahlmenü / Navigation */
+        nav {
+            background-color: #2c3e50;
+            padding: 0 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            height: 50px;
+        }
+
+        .nav-brand {
+            color: #fff;
+            font-weight: bold;
+            font-size: 1.2rem;
+        }
+
+        .nav-links {
+            list-style: none;
+            display: flex;
+            margin: 0;
+            padding: 0;
+            height: 100%;
+        }
+
+        /* Hauptmenü-Punkte */
+        .dropdown {
+            position: relative;
+            height: 100%;
+        }
+
+        .dropdown-btn {
+            color: #ecf0f1;
+            text-decoration: none;
+            font-size: 1rem;
+            padding: 0 20px;
+            display: flex;
+            align-items: center;
+            height: 100%;
+            transition: background-color 0.2s;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .dropdown-btn::after {
+            content: ' ▾';
+            font-size: 0.8rem;
+            margin-left: 5px;
+        }
+
+        .dropdown:hover .dropdown-btn {
+            background-color: #34495e;
+            color: #3498db;
+        }
+
+        /* Dropdown-Inhalte */
+        .dropdown-content {
+            display: none;
+            position: absolute;
+            top: 50px;
+            left: 0;
+            background-color: #ffffff;
+            min-width: 200px;
+            box-shadow: 0px 8px 16px rgba(0,0,0,0.15);
+            border-radius: 0 0 4px 4px;
+            z-index: 1000;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .dropdown-content a {
+            color: #333333;
+            padding: 12px 16px;
+            text-decoration: none;
+            display: block;
+            font-size: 0.95rem;
+            transition: background-color 0.2s, color 0.2s;
+            cursor: pointer;
+        }
+
+        .dropdown-content a:hover {
+            background-color: #f1f2f6;
+            color: #3498db;
+        }
+
+        .dropdown:hover .dropdown-content {
+            display: block;
+        }
+
+        /* Hauptbereich */
+        main {
+            max-width: 1000px;
+            margin: 30px auto;
+            padding: 20px;
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        }
+
+        h1 {
+            font-size: 1.5rem;
+            color: #2c3e50;
+            margin-top: 0;
+            border-bottom: 2px solid #ecf0f1;
+            padding-bottom: 10px;
+        }
+
+        /* JSON-Visualisierung */
+        #json-container {
+            background-color: #272822;
+            color: #f8f8f2;
+            padding: 20px;
+            border-radius: 6px;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 0.95rem;
+            line-height: 1.5;
+            overflow-x: auto;
+            min-height: 100px;
+        }
+
+        .loading { color: #66d9ef; font-style: italic; }
+        .error { color: #f92672; font-weight: bold; }
+
+        /* JSON Baum-Struktur */
+        .json-group { margin-left: 20px; }
+        .json-pair { margin: 4px 0; }
+        .json-key { color: #f92672; font-weight: bold; }
+        .json-value.string { color: #e6db74; }
+        .json-value.number { color: #ae81ff; }
+        .json-value.boolean { color: #66d9ef; }
+        .json-value.null { color: #75715e; }
+
+        details { display: block; }
+        summary { cursor: pointer; color: #66d9ef; outline: none; user-select: none; }
+        summary:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+
+    <!-- Oberes Auswahlmenü -->
+    <nav>
+        <div class="nav-brand">Battery Info</div>
+        <ul class="nav-links">
+            
+            <li class="dropdown">
+                <span class="dropdown-btn">Serial Numbers</span>
+                <div class="dropdown-content" id="menu-SerialNumber"></div>
+            </li>
+
+            <li class="dropdown">
+                <span class="dropdown-btn">Manufacturer Info</span>
+                <div class="dropdown-content" id="menu-ManufacturerInfo"></div>
+            </li>
+
+            <li class="dropdown">
+                <span class="dropdown-btn">Analog values</span>
+                <div class="dropdown-content" id="menu-AnalogValue"></div>
+            </li>
+
+            <li class="dropdown">
+                <span class="dropdown-btn">Alarm Info</span>
+                <div class="dropdown-content" id="menu-AlarmInfo"></div>
+            </li>
+
+            <li class="dropdown">
+                <span class="dropdown-btn">Management Info</span>
+                <div class="dropdown-content" id="menu-ManagementInfo"></div>
+            </li>
+        </ul>
+    </nav>
+
+    <!-- Hauptinhalt -->
+    <main>
+        <h1 id="content-title">Wähle eine Information aus dem Menü</h1>
+        
+        <!-- Bereich für die Visualisierung -->
+        <div id="json-container">JSON-Daten erscheinen nach der Auswahl eines Menüpunkts.</div>
+    </main>
+
+    <script>
+        // Eindeutiger Platzhalter ohne ${} für dein Servlet (z.B. im Java-Code mit .replace('$SERVER_REPLACE_ANZAHL_GERAETE$', "5") ersetzen)
+        var {ANZAHL_GERAETE} 
+
+        // Die Namen der abzurufenden Informationen
+        var infoTypes = ['SerialNumber', 'ManufacturerInfo', 'AnalogValue', 'AlarmInfo', 'ManagementInfo'];
+
+        // Dynamische Generierung der Dropdown-Links über klassische String-Verkettung
+        function renderMenus() {
+            infoTypes.forEach(function(info) {
+                var menuContainer = document.getElementById('menu-' + info);
+                if (!menuContainer) return;
+
+                var html = '';
+                
+                // 1. Eintrag: Alle Geräte (-1)
+                html += '<a onclick="loadJson(\'' + info + '\', -1)">All Devices</a>';
+                
+                // 2. bis n. Eintrag: Gerät 1 bis n
+                for (var i = 1; i <= ANZAHL_GERAETE; i++) {
+                    html += '<a onclick="loadJson(\'' + info + '\', ' + i + ')">Device ' + ( i + 1 ) + '</a>';
+                }
+                
+                menuContainer.innerHTML = html;
+            });
+        }
+
+        // Modifizierte loadJson Funktion komplett ohne Backticks und ${}
+        async function loadJson(infoType, deviceId) {
+            var container = document.getElementById('json-container');
+            var title = document.getElementById('content-title');
+            
+            if( deviceId > 0 ) deviceId = deviceId + 1;
+            
+            var deviceText = (deviceId === -1) ? 'all devices' : 'device ' + deviceId;
+            title.textContent = 'get' + infoType + ' from ' + deviceText;
+            container.innerHTML = '<span class="loading">Abfrage läuft...</span>';
+
+            // URL-Parameter-String sicher via Plus-Operator verketten
+            var targetUrl = '/system/us2000c/info?cmd=get'  
+                +  encodeURIComponent(infoType) 
+                + '&addr=' + deviceId;
+
+			console.log( 'Abfrage: ' + targetUrl )
+			
+            try {
+                var response = await fetch(targetUrl);
+                
+                if (!response.ok) {
+                    throw new Error('HTTP-Fehler! Status: ' + response.status);
+                }
+                
+                var data = await response.json();
+                container.innerHTML = createJsonTree(data);
+                
+            } catch (error) {
+                container.innerHTML = '<span class="error">Fehler bei der HTTP-Abfrage:<br>' + error.message + '</span>';
+            }
+        }
+
+        // HTML-Baumstruktur aus JSON-Objekt generieren
+        function createJsonTree(obj) {
+            if (obj === null) return '<span class="json-value null">null</span>';
+            if (typeof obj === 'boolean') return '<span class="json-value boolean">' + obj + '</span>';
+            if (typeof obj === 'number') return '<span class="json-value number">' + obj + '</span>';
+            if (typeof obj === 'string') return '<span class="json-value string">"' + obj + '"</span>';
+
+            var isArray = Array.isArray(obj);
+            var startBrace = isArray ? '[' : '{';
+            var endBrace = isArray ? ']' : '}';
+            var size = Object.keys(obj).length;
+            
+            var html = '<details open>';
+            html += '<summary>' + startBrace + ' <small style="color: #75715e;">' + size + ' Elemente</small></summary>';
+            html += '<div class="json-group">';
+
+            for (var key in obj) {
+                if (obj.hasOwnProperty(key)) {
+                    html += '<div class="json-pair">';
+                    html += '<span class="json-key">"' + key + '": </span>';
+                    html += createJsonTree(obj[key]);
+                    html += '</div>';
+                }
+            }
+
+            html += '</div>';
+            html += '<div>' + endBrace + '</div>';
+            html += '</details>';
+            
+            return html;
+        }
+
+        // Initialisierung
+        window.onload = function() {
+            renderMenus();
+            
+            if (ANZAHL_GERAETE > 0) {
+                loadJson('SerialNumber', -1);
+            }
+        };
+    </script>
+</body>
+</html>

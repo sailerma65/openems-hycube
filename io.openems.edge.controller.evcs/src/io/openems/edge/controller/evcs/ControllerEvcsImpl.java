@@ -39,6 +39,7 @@ import io.openems.edge.ess.api.ManagedSymmetricEss;
 import io.openems.edge.evcs.api.ChargeMode;
 import io.openems.edge.evcs.api.ChargeState;
 import io.openems.edge.evcs.api.ManagedEvcs;
+import io.openems.edge.evcs.api.Status;
 
 @Designate(ocd = Config.class, factory = true)
 @Component(//
@@ -212,7 +213,7 @@ public class ControllerEvcsImpl extends AbstractOpenemsComponent
 							yield 0;
 						}
 					}
-					if( config.forbidDischarge() && ess != null )
+					if( config.forbidDischarge() && ess != null && evcs.getStatus().ordinal() >= Status.READY_FOR_CHARGING.ordinal() )
 					{
 						int gridPower = sum.getGridActivePower().orElse(0);
 						int evcsCharge = evcs.getActivePower().orElse(0);
@@ -231,7 +232,7 @@ public class ControllerEvcsImpl extends AbstractOpenemsComponent
 					
 				}
 				case FORCE_CHARGE -> {
-					if( config.forbidDischarge() && ess != null )
+					if( config.forbidDischarge() && ess != null && evcs.getStatus().ordinal() >= Status.READY_FOR_CHARGING.ordinal() )
 					{
 						int gridPower = sum.getGridActivePower().orElse(0);
 						int evcsCharge = evcs.getActivePower().orElse(0);
