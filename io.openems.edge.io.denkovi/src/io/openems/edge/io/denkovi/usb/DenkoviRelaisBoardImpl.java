@@ -1,19 +1,16 @@
 package io.openems.edge.io.denkovi.usb;
 
-import static io.openems.edge.common.channel.ChannelUtils.setValue;
 import static io.openems.edge.common.event.EdgeEventConstants.TOPIC_CYCLE_AFTER_PROCESS_IMAGE;
 import static io.openems.edge.common.event.EdgeEventConstants.TOPIC_CYCLE_EXECUTE_WRITE;
 
 import java.nio.ByteBuffer;
 import java.nio.IntBuffer;
-import java.util.Objects;
 
 import org.osgi.service.component.ComponentContext;
 import org.osgi.service.component.annotations.Activate;
 import org.osgi.service.component.annotations.Component;
 import org.osgi.service.component.annotations.ConfigurationPolicy;
 import org.osgi.service.component.annotations.Deactivate;
-import org.osgi.service.component.annotations.Reference;
 import org.osgi.service.event.Event;
 import org.osgi.service.event.EventHandler;
 import org.osgi.service.event.propertytypes.EventTopics;
@@ -21,12 +18,11 @@ import org.osgi.service.metatype.annotations.Designate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import io.openems.common.bridge.http.api.BridgeHttp;
-import io.openems.common.bridge.http.api.BridgeHttpFactory;
 import io.openems.common.channel.AccessMode;
 import io.openems.common.channel.PersistencePriority;
 import io.openems.edge.common.channel.BooleanDoc;
 import io.openems.edge.common.channel.BooleanWriteChannel;
+import io.openems.edge.common.channel.Channel;
 import io.openems.edge.common.component.AbstractOpenemsComponent;
 import io.openems.edge.common.component.OpenemsComponent;
 import io.openems.edge.io.api.DigitalOutput;
@@ -59,8 +55,6 @@ public class DenkoviRelaisBoardImpl extends AbstractOpenemsComponent
 
 		private BooleanWriteChannel[] writeChannels = {};
 
-		private boolean[] actualValues;
-		
 		// Standard-IDs für FTDI FT245 / FT232 Chips
 		private static final short VENDOR_ID = (short) 0x0403;
 		private static final short PRODUCT_ID = (short) 0x6001;
@@ -78,8 +72,8 @@ public class DenkoviRelaisBoardImpl extends AbstractOpenemsComponent
 
 		private Context context = null;
 		
-		private byte bitmask = 0;
-
+		private int currentBitmask = 0;
+		
 		public DenkoviRelaisBoardImpl() {
 			super(//
 					OpenemsComponent.ChannelId.values(), //
@@ -212,7 +206,7 @@ public class DenkoviRelaisBoardImpl extends AbstractOpenemsComponent
 			}
 			log.info("Bit-Bang-Modus erfolgreich aktiviert!");
 			
-			setMask( bitmask );
+			setMask( currentBitmask );
 			}
 			catch( Throwable ex )
 			{
@@ -221,26 +215,13 @@ public class DenkoviRelaisBoardImpl extends AbstractOpenemsComponent
 		}
 
 
-		private synchronized boolean setBit( int number, boolean onOff )
-		{
-			if( onOff )
-			{
-				bitmask |= ( 1 << number );
-			}
-			else
-			{
-				bitmask &= ~( 1 << number );
-			}
-			return setMask( bitmask );
-		}
-		
-		private synchronized boolean setMask(byte relayMask) {
+		private synchronized boolean setMask(int relayMask) {
 			// 6. RELAIS SCHALTEN (Bulk Transfer)
 			// Jedes Bit steht für ein Relais.
 			// Relais 1 + Relais 3 einschalten: binär 00000101 = dezimal 5 = 0x05
 
 			ByteBuffer buffer = ByteBuffer.allocateDirect(1);
-			buffer.put(relayMask);
+			buffer.put( ( byte )relayMask);
 			buffer.rewind();
 
 			IntBuffer transferredBytes = IntBuffer.allocate(1);
@@ -249,7 +230,6 @@ public class DenkoviRelaisBoardImpl extends AbstractOpenemsComponent
 			int writeResult = LibUsb.bulkTransfer(deviceHandle, (byte) 0x02, buffer, transferredBytes, 5000);
 
 			if (writeResult == LibUsb.SUCCESS) {
-				log.info("Befehl gesendet! Zustand der Relais-Maske: " + Integer.toBinaryString(relayMask));
 				return true;
 			} else {
 
@@ -267,7 +247,6 @@ public class DenkoviRelaisBoardImpl extends AbstractOpenemsComponent
 			
 			// Generate OutputChannels
 			this.writeChannels = new BooleanWriteChannel[config.numberOfOutputs()];
-			this.actualValues = new boolean[config.numberOfOutputs()];
 			
 			for (var i = 0; i < config.numberOfOutputs(); i++) {
 				var channelName = String.format(CHANNEL_NAME, i);
@@ -343,19 +322,28 @@ public class DenkoviRelaisBoardImpl extends AbstractOpenemsComponent
 		 * Execute on Cycle Event "Execute Write".
 		 */
 		private void executeWrite() {
+			int newBits = 0;
+			
 			for (int i = 0; i < this.writeChannels.length; i++) {
-				this.executeWrite(this.writeChannels[i], i);
+				Channel<Boolean> channel = this.writeChannels[i];
+				
+				boolean readValue = channel.value().orElse(false);
+				
+				if( readValue )
+				{
+					newBits = newBits |= ( 1 << i );
+				}
+				else
+				{
+					newBits = newBits & ( ~( 1 << i ) ); 
+				}
 			}
-		}
-
-		private void executeWrite(BooleanWriteChannel channel, int index) {
-			boolean readValue = channel.value().orElse(false);
 			
-			if( readValue == actualValues[ index ] )
-			{
-				return;
+			if( newBits != currentBitmask ) {
+				setMask( newBits );
+				currentBitmask = newBits;
+				
+				log.info( "set new bitmask: " + Integer.toString( currentBitmask, 2 ) );
 			}
-			
-			setBit(index, readValue);
 		}
 }

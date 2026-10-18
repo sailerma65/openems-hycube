@@ -107,7 +107,7 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 	
 	private int m_numberOfDevices = 0;
 	
-	private PylontechUS2000CBatteryProtectionDefinition protectionDef;
+	private final PylontechUS2000CBatteryProtectionDefinition protectionDef = new PylontechUS2000CBatteryProtectionDefinition( 0, 0, 0 );
 	
 	@Activate
 	void activate(ComponentContext context, Config config) throws OpenemsException {
@@ -119,10 +119,6 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 		
 		m_worker.activate( config.id() + "Worker" );
 
-		protectionDef = new PylontechUS2000CBatteryProtectionDefinition( 0, 0, 0 );
-		
-		// TODO Protection-Werte abhängig von devicesInParallel
-		// maxEverCharge, maxEverDischarge, increasePerSecond
 		this.batteryProtection = BatteryProtection.create(this) //
 				.applyBatteryProtectionDefinition(protectionDef,
 						this.componentManager) //
@@ -267,7 +263,14 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 			int _initBmsMaxEverDischarge = m_numberOfDevices * 25;
 			int _maxIncreasePerSecond = m_numberOfDevices * 5;
 			
-			protectionDef = new PylontechUS2000CBatteryProtectionDefinition( _initBmsMaxEverCharge, _initBmsMaxEverDischarge, _maxIncreasePerSecond );
+			protectionDef.setInitialBmsMaxEverChargeCurrent(_initBmsMaxEverCharge);
+			protectionDef.setInitialBmsMaxEverDischargeCurrent(_initBmsMaxEverDischarge);
+			protectionDef.setMaxIncreaseAmperePerSecond(_maxIncreasePerSecond);
+			
+			this.batteryProtection = BatteryProtection.create(this) //
+					.applyBatteryProtectionDefinition(protectionDef,
+							this.componentManager) //
+					.build();
 		}
 		
 		channel(PylontechUS2000CBattery.ChannelId.COMMUNICATION_ERROR).setNextValue(communicationError);

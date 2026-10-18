@@ -1,7 +1,6 @@
 package io.openems.edge.hycube.ess;
 
 import static io.openems.common.channel.AccessMode.READ_WRITE;
-import static io.openems.common.channel.AccessMode.WRITE_ONLY;
 import static io.openems.common.channel.Level.FAULT;
 import static io.openems.common.channel.PersistencePriority.HIGH;
 import static io.openems.common.channel.Unit.AMPERE;
@@ -10,12 +9,12 @@ import static io.openems.common.channel.Unit.WATT;
 import static io.openems.common.channel.Unit.WATT_HOURS;
 import static io.openems.common.types.OpenemsType.INTEGER;
 import static io.openems.common.types.OpenemsType.LONG;
-import static io.openems.common.types.OpenemsType.SHORT;
 import static io.openems.common.types.OpenemsType.STRING;
 
 import org.osgi.service.event.EventHandler;
 
 import io.openems.common.channel.AccessMode;
+import io.openems.common.channel.PersistencePriority;
 import io.openems.common.channel.Unit;
 import io.openems.common.exceptions.OpenemsError.OpenemsNamedException;
 import io.openems.common.types.OpenemsType;
@@ -76,7 +75,9 @@ public interface HycubeEss extends ManagedSymmetricEss, OpenemsComponent, EventH
 				.unit(Unit.WATT).text("Solar2 power")),
 
 		SOLAR_SUM_POWER(Doc.of(INTEGER)
-				.unit(Unit.WATT).text("Total solar power")),
+				.unit(Unit.WATT).
+				persistencePriority(PersistencePriority.HIGH).
+				text("Total solar power")),				
 
 		INVERTER_L1_VOLTAGE( Doc.of(INTEGER)
 				.unit(Unit.DEZIVOLT).text("Inverter voltage L1")),
@@ -154,6 +155,7 @@ public interface HycubeEss extends ManagedSymmetricEss, OpenemsComponent, EventH
 		
 		SET_TARGET_BATTERY_POWER(Doc.of(INTEGER)// Soll-Wert
 				.unit(Unit.WATT)//
+				.persistencePriority(PersistencePriority.HIGH)
 				.accessMode(READ_WRITE) //
 				.text("Battery power target value")),
 		
@@ -276,16 +278,6 @@ public interface HycubeEss extends ManagedSymmetricEss, OpenemsComponent, EventH
 				.unit(VOLT)//
 				.text("Minimum battery discharge voltage")),
 
-		SET_ACTIVE_POWER_L1(Doc.of(SHORT)//
-				.unit(WATT)//
-				.accessMode(WRITE_ONLY)), //
-		SET_ACTIVE_POWER_L2(Doc.of(SHORT)//
-				.unit(WATT)//
-				.accessMode(WRITE_ONLY)), //
-		SET_ACTIVE_POWER_L3(Doc.of(SHORT)//
-				.unit(WATT)//
-				.accessMode(WRITE_ONLY)), //
-		
 		/**
 		 * Off-Grid-Frequency.
 		 *

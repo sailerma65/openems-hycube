@@ -26,9 +26,17 @@ public class PylontechUS2000CBatteryProtectionDefinition implements BatteryProte
 		return initBmsMaxEverCharge; // [A]
 	}
 
+	public void setInitialBmsMaxEverChargeCurrent( int i_value ) {
+		initBmsMaxEverCharge = i_value;
+	}
+
 	@Override
 	public int getInitialBmsMaxEverDischargeCurrent() {
 		return initBmsMaxEverDischarge; // [A]
+	}
+
+	public void setInitialBmsMaxEverDischargeCurrent( int i_value ) {
+		initBmsMaxEverDischarge = i_value; // [A]
 	}
 
 	@Override
@@ -69,6 +77,11 @@ public class PylontechUS2000CBatteryProtectionDefinition implements BatteryProte
 		return maxIncreasePerSecond;
 	}
 
+	public void setMaxIncreaseAmperePerSecond( int i_increase )
+	{
+		maxIncreasePerSecond = i_increase;
+	}
+	
 	@Override
 	public PolyLine getChargeSocToPercent() {
 		return PolyLine.empty();

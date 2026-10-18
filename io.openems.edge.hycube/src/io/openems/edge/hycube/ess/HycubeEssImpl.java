@@ -830,7 +830,6 @@ public class HycubeEssImpl extends AbstractOpenemsModbusComponent
 						+ activePowerTargetL3 );
 
 		if (activePowerTargetL1 == 0 && activePowerTargetL2 == 0 && activePowerTargetL3 == 0) {
-			this.logDebug(this.log, "\n Disabling Charging / Discharging");
 			this._setDisableChargeFlag(EnableDisable.ENABLE);
 			this._setDisableDischargeFlag(EnableDisable.ENABLE);
 		} else {
@@ -922,7 +921,6 @@ public class HycubeEssImpl extends AbstractOpenemsModbusComponent
 		int acOutputActivePowerSum = getLoadOutputPowerL1().orElse(0);
 
 		if (activePowerTarget == 0) {
-			this.logDebug(this.log, "\n Disabling Charging / Discharging");
 			this._setDisableChargeFlag(EnableDisable.ENABLE);
 			this._setDisableDischargeFlag(EnableDisable.ENABLE);
 		} else {
@@ -1279,7 +1277,7 @@ public class HycubeEssImpl extends AbstractOpenemsModbusComponent
 	
 	public void setSoftStart( boolean i_onOff )
 	{
-		logDebug( log, "switch Remote Acces Unit " + ( i_onOff ? "on" : "off") );
+		logDebug( log, "switch Remote Acces Unit Softstart " + ( i_onOff ? "on" : "off") );
 		digOutBoard.digitalOutputChannels()[ 5 ].setNextValue( i_onOff );
 	}
 
