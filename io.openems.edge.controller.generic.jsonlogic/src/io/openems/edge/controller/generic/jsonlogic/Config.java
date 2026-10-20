@@ -14,6 +14,9 @@ import org.osgi.service.metatype.annotations.ObjectClassDefinition;
 	@AttributeDefinition(name = "Alias", description = "Human-readable name of this Component; defaults to Component-ID")
 	String alias() default "";
 
+	@AttributeDefinition(name = "Inputs", description = "number of generated boolean input channels")
+	int inputChannels() default 0;
+
 	@AttributeDefinition(name = "Is enabled?", description = "Is this Component enabled?")
 	boolean enabled() default true;
 

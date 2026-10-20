@@ -10,13 +10,19 @@ public class MyConfig extends AbstractComponentConfig implements Config {
 	protected static class Builder {
 		private String id = "ctrlJsonLogic0";
 		private String rule = null;
-
+		private int inputChannels = 0;
+		
 		private Builder() {
 
 		}
 
 		public Builder setId(String id) {
 			this.id = id;
+			return this;
+		}
+
+		public Builder setInputChannels(int inputChannels) {
+			this.inputChannels = inputChannels;
 			return this;
 		}
 
@@ -41,6 +47,11 @@ public class MyConfig extends AbstractComponentConfig implements Config {
 	}
 
 	private final Builder builder;
+
+	@Override
+	public int inputChannels() {
+		return this.builder.inputChannels;
+	}
 
 	private MyConfig(Builder builder) {
 		super(Config.class, builder.id);

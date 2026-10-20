@@ -19,10 +19,16 @@ import com.google.gson.JsonElement;
 import io.github.meiskalt7.jsonlogic.JsonLogic;
 import io.github.meiskalt7.jsonlogic.JsonLogicException;
 import io.openems.common.exceptions.OpenemsError.OpenemsNamedException;
+import io.openems.common.channel.AccessMode;
+import io.openems.common.channel.PersistencePriority;
 import io.openems.common.exceptions.OpenemsException;
 import io.openems.common.types.ChannelAddress;
 import io.openems.common.utils.JsonUtils;
+import io.openems.edge.common.channel.BooleanDoc;
+import io.openems.edge.common.channel.BooleanWriteChannel;
+import io.openems.edge.common.channel.Doc;
 import io.openems.edge.common.channel.WriteChannel;
+import io.openems.edge.common.channel.internal.AbstractDoc;
 import io.openems.edge.common.component.AbstractOpenemsComponent;
 import io.openems.edge.common.component.ComponentManager;
 import io.openems.edge.common.component.OpenemsComponent;
@@ -45,6 +51,28 @@ public class ControllerGenericJsonLogicImpl extends AbstractOpenemsComponent
 
 	private Config config = null;
 
+	public static final String CHANNEL_NAME = "Input%d";
+
+	public static class GenericInputChannel implements io.openems.edge.common.channel.ChannelId {
+		private final String name;
+		private final AbstractDoc<Boolean> doc;
+	
+		public GenericInputChannel(String name, AbstractDoc<Boolean> doc) {
+			this.name = name;
+			this.doc = doc;
+		}
+	
+		@Override
+		public String name() {
+			return this.name;
+		}
+	
+		@Override
+		public Doc doc() {
+			return this.doc;
+		}
+	}
+	
 	public ControllerGenericJsonLogicImpl() {
 		super(//
 				OpenemsComponent.ChannelId.values(), //
@@ -58,6 +86,19 @@ public class ControllerGenericJsonLogicImpl extends AbstractOpenemsComponent
 		super.activate(context, config.id(), config.alias(), config.enabled());
 		this.config = config;
 
+		var doc = new BooleanDoc() //
+				.persistencePriority(PersistencePriority.HIGH) //
+				.accessMode(AccessMode.READ_WRITE);
+
+		for( int i = 0; i < config.inputChannels(); i++ )
+		{
+			var channelName = String.format(CHANNEL_NAME, i);
+			var channel = (BooleanWriteChannel) this.addChannel(new GenericInputChannel(channelName, doc));
+
+			// default to OFF
+			channel.setNextValue(false);
+		}
+		
 		this.recursivelyParseVars(JsonUtils.parse(config.rule()));
 	}
 
