@@ -147,10 +147,12 @@ public interface HycubeEss extends ManagedSymmetricEss, OpenemsComponent, EventH
 
 		BATTERY_CURRENT(Doc.of(INTEGER)//
 				.unit(Unit.DEZIAMPERE)//
+				.persistencePriority(HIGH)
 				.text("Battery current")),
 		
 		BATTERY_VOLTAGE(Doc.of(INTEGER)//
 				.unit(Unit.DEZIVOLT)//
+				.persistencePriority(HIGH)
 				.text("Battery current")),
 		
 		SET_TARGET_BATTERY_POWER(Doc.of(INTEGER)// Soll-Wert

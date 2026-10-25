@@ -260,8 +260,11 @@ public class DenkoviRelaisBoardImpl extends AbstractOpenemsComponent
 				this.logInfo(this.log, "Creating Denkovi DigitalOutput [" + channel.address() + "]");
 				// register listener for write-events on the channel to set its new value
 				channel.onSetNextWrite(value -> {
-					this.logInfo(this.log,
+					if( channel.value().get() != value )
+					{
+						this.logInfo(this.log,
 							"DigitalOutput [" + channel.address() + "] was turned " + (value ? "ON" : "OFF"));
+					}
 					channel.setNextValue(value);
 				});
 				this.writeChannels[i] = channel;

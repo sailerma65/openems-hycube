@@ -479,17 +479,28 @@ public class HycubeEssImpl extends AbstractOpenemsModbusComponent
 	{
 		if( stateMachine.getCurrentState() == State.RUNNING || i_force )
 		{
-			if( recentSetMaxChargeVoltageValue == null || recentSetMaxChargeVoltageValue != i_voltage || i_force )
+			int voltage;
+			
+			if( config.maxChargeVoltage() > 40.0 )
+			{
+				voltage = ( int )( config.maxChargeVoltage() * 10.0 );
+			}
+			else
+			{
+				voltage = i_voltage;
+			}
+			
+			if( recentSetMaxChargeVoltageValue == null || recentSetMaxChargeVoltageValue != voltage || i_force )
 			{
 				IntegerWriteChannel channel = this.channel( HycubeEss.ChannelId.FINAL_CHARGING_VOLTAGE );
 				
 				try {
-					channel.setNextWriteValue(  i_voltage );
-					channel.setNextValue(  i_voltage );
+					channel.setNextWriteValue(  voltage );
+					channel.setNextValue(  voltage );
 				} catch (OpenemsNamedException e) {
 					logError( this.log, "Error writing FINAL_CHARGING_VOLTAGE" + e.getMessage() );
 				}
-				recentSetMaxChargeVoltageValue = i_voltage;
+				recentSetMaxChargeVoltageValue = voltage;
 			}
 		}			
 	}
@@ -1278,7 +1289,7 @@ public class HycubeEssImpl extends AbstractOpenemsModbusComponent
 	public void setSoftStart( boolean i_onOff )
 	{
 		logDebug( log, "switch Remote Acces Unit Softstart " + ( i_onOff ? "on" : "off") );
-		digOutBoard.digitalOutputChannels()[ 5 ].setNextValue( i_onOff );
+		digOutBoard.digitalOutputChannels()[ config.io_softstart_pin() ].setNextValue( i_onOff );
 	}
 
 	public void connectBattery()

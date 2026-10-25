@@ -20,10 +20,16 @@ public class PylontechSerialProtocol {
 	public static final long TIMEOUT_MILLI = 1500l;
 	public static final long FACTOR_MILLI_TO_NANO = 1000000l;
 
+	public static final int CMD_KEY_GET_ANALOG_VALUE = 0x42;
+	public static final int CMD_KEY_GET_ALARM_INFO = 0x44;
+	public static final int CMD_KEY_GET_MANUFACTURER_INFO = 0x51;
+	public static final int CMD_KEY_GET_MANAGEMENT_INFO = 0x92;
+	public static final int CMD_KEY_GET_SERIAL_NUMBER = 0x93;
+	
 	public static enum CMD_DESCRIPTORS {
-		CMD_GET_ANALOG_VALUE(0x42,"getAnalogValue"), CMD_GET_ALARM_INFO(0x44,"getAlarmInfo"), CMD_GET_SYSTEM_PARAMETERS(0x47),
-		CMD_GET_PROTOCOL_VERSION(0x4F), CMD_GET_MANUFACTURER_INFO(0x51,"getManufacturerInfo"), CMD_GET_MANAGEMENT_INFO(0x92,"getManagementInfo"),
-		CMD_GET_SERIAL_NUMBER(0x93,"getSerialNumber"), CMD_SET_CHARGE_DISCHARGE_MANAGEMENT(0x94), CMD_TURNOFF(0x95),
+		CMD_GET_ANALOG_VALUE(CMD_KEY_GET_ANALOG_VALUE,"getAnalogValue"), CMD_GET_ALARM_INFO(CMD_KEY_GET_ALARM_INFO,"getAlarmInfo"), CMD_GET_SYSTEM_PARAMETERS(0x47),
+		CMD_GET_PROTOCOL_VERSION(0x4F), CMD_GET_MANUFACTURER_INFO(CMD_KEY_GET_MANUFACTURER_INFO,"getManufacturerInfo"), CMD_GET_MANAGEMENT_INFO(CMD_KEY_GET_MANAGEMENT_INFO,"getManagementInfo"),
+		CMD_GET_SERIAL_NUMBER(CMD_KEY_GET_SERIAL_NUMBER,"getSerialNumber"), CMD_SET_CHARGE_DISCHARGE_MANAGEMENT(0x94), CMD_TURNOFF(0x95),
 		CMD_GET_FIRMWARE_INFO(0x96), CMD_RETRIEVE_BATT_BASIC_INFO(0x60), CMD_GET_SYSTEM_ANALOG_DATA(0x61),
 		CMD_GET_SYSTEM_ALARM_INFO(0x62), CMD_GET_SYSTEM_CHARGE_DISCHARGE_MANAGEMENT(0x63), CMD_SYSTEM_SHUTDOWN(0x64);
 
@@ -85,7 +91,7 @@ public class PylontechSerialProtocol {
 	}
 
 	public static int getInfoLength(byte[] info) {
-		int lenId = info.length;;
+		int lenId = info.length*2;
 		if (lenId == 0) {
 			return 0;
 		}
@@ -101,7 +107,7 @@ public class PylontechSerialProtocol {
 	}
 
 	public void sendCmdWithAddressInfo(int address, CMD_DESCRIPTORS i_cmdDescr) throws IOException {
-		byte[] bdEvId = String.format("%02X", address).getBytes(StandardCharsets.US_ASCII);
+		byte[] bdEvId = new byte[] { (byte)address};
 
 		sendCmdRaw(address, i_cmdDescr.getCmd(), bdEvId);
 	}
@@ -135,9 +141,9 @@ public class PylontechSerialProtocol {
 		byte[] headAscii = head.getBytes(StandardCharsets.US_ASCII);
 
 		// INFO must be sent as ASCII HEX (each byte -> 2 ASCII chars)
-		// byte[] infoHexAscii = bytesToHex(info).getBytes(StandardCharsets.US_ASCII);
+		byte[] infoHexAscii = bytesToHex(info).getBytes(StandardCharsets.US_ASCII);
 
-		byte[] frame = concat(headAscii, info);
+		byte[] frame = concat(headAscii, infoHexAscii);
 
 		int frameChecksum = getFrameChecksum(frame);
 		String checksumHex = String.format("%04X", frameChecksum);
@@ -297,7 +303,7 @@ public class PylontechSerialProtocol {
 
 	public Frame getSystemParameters(Integer devId) throws IOException {
 		if (devId != null && devId != 0) {
-			byte[] bdEvId = String.format("%02X", devId).getBytes(StandardCharsets.US_ASCII);
+			byte[] bdEvId = new byte[] {devId.byteValue()};
 			sendCmd(devId, CMD_DESCRIPTORS.CMD_GET_SYSTEM_PARAMETERS, bdEvId);
 		} else {
 			sendCmd(2, CMD_DESCRIPTORS.CMD_GET_SYSTEM_PARAMETERS);
@@ -308,22 +314,29 @@ public class PylontechSerialProtocol {
 	}
 
 	public Frame getManagementInfo(int devId) throws IOException {
-		byte[] bdEvId = String.format("%02X", devId).getBytes(StandardCharsets.US_ASCII);
+		byte[] bdEvId = new byte[] {(byte)devId};
 		sendCmd(devId, CMD_DESCRIPTORS.CMD_GET_MANAGEMENT_INFO, bdEvId);
 		Frame f = readFrame();
 		return f;
 	}
 
 	public Frame getAlarmInfo(int devId) throws IOException {
-		byte[] bdEvId = String.format("%02X", devId).getBytes(StandardCharsets.US_ASCII);
+		byte[] bdEvId = new byte[] {(byte)devId};
 		sendCmd(devId, CMD_DESCRIPTORS.CMD_GET_ALARM_INFO, bdEvId);
+		Frame f = readFrame();
+		return f;
+	}
+
+	public Frame getProtocolVersion(int devId) throws IOException {
+		byte[] bdEvId = new byte[] {(byte)devId};
+		sendCmd(devId, CMD_DESCRIPTORS.CMD_GET_PROTOCOL_VERSION, bdEvId);
 		Frame f = readFrame();
 		return f;
 	}
 
 	public Frame getModuleSerialNumber(Integer devId) throws IOException {
 		if (devId != null && devId != 0) {
-			byte[] bdEvId = String.format("%02X", devId).getBytes(StandardCharsets.US_ASCII);
+			byte[] bdEvId = new byte[] {devId.byteValue()};
 			sendCmd(devId, CMD_DESCRIPTORS.CMD_GET_SERIAL_NUMBER, bdEvId);
 		} else {
 			sendCmd(2, CMD_DESCRIPTORS.CMD_GET_SERIAL_NUMBER);
@@ -335,7 +348,7 @@ public class PylontechSerialProtocol {
 
 	public Frame getModuleManufacturerInfo(Integer devId) throws IOException {
 		if (devId != null && devId != 0) {
-			byte[] bdEvId = String.format("%02X", devId).getBytes(StandardCharsets.US_ASCII);
+			byte[] bdEvId = new byte[] {devId.byteValue()};
 			sendCmd(devId, CMD_DESCRIPTORS.CMD_GET_MANUFACTURER_INFO, bdEvId);
 		} else {
 			sendCmd(2, CMD_DESCRIPTORS.CMD_GET_MANUFACTURER_INFO);
@@ -347,7 +360,7 @@ public class PylontechSerialProtocol {
 	}
 
 	public Frame getValuesSingle(int devId) throws IOException {
-		byte[] bdEvId = String.format("%02X", devId).getBytes(StandardCharsets.US_ASCII);
+		byte[] bdEvId = new byte[] {(byte)devId};
 		sendCmd(devId, CMD_DESCRIPTORS.CMD_GET_ANALOG_VALUE, bdEvId);
 		Frame f = readFrame();
 		return f;
@@ -491,6 +504,11 @@ public class PylontechSerialProtocol {
 
 	}
 
+	public record ProtocolInfo( int protocol )
+	{
+		
+	}
+	
 	public record ManagementInfo(double chargeVoltageLimit, double dischargeVoltageLimit, double chargeCurrentLimit,
 			double dischargeCurrentLimit, boolean chargeEnable, boolean dischargeEnable, boolean chargeImmediately1,
 			boolean chargeImmediately2, boolean fullChargeRequest) {
@@ -579,7 +597,7 @@ public class PylontechSerialProtocol {
 			CurrentAlarm disChargeCurrentAlarm) {
 	}
 
-	public static AlarmInfo parseAlarm(byte[] info) {
+	public static AlarmInfo parseAlarm(byte[] info, int address ) {
 		ReadCursor c = new ReadCursor(info);
 		@SuppressWarnings("unused")
 		int dataFlag = c.readUInt8();
@@ -605,6 +623,22 @@ public class PylontechSerialProtocol {
 		VoltageAlarm systemVoltageAlarm = parseVoltageAlarm(c);
 		CurrentAlarm disChargeCurrentAlarm = parseCurrentAlarm(c);
 
+		byte[] restBytes = c.readBytes(c.remaining() );
+
+		StringBuffer buf = new StringBuffer();
+		
+		for( int i = 0; i < restBytes.length; i++ )
+		{
+			if( restBytes[ i ] != 0 )
+			{
+				buf.append( "ST%d: %02X;".formatted( ( i + 1 ), restBytes[i] ) );
+			}
+		}
+		
+		if( buf.length() > 0 )
+		{
+		  LOGGER.info( "Bat%d: ".formatted(address) + buf.toString() );
+		}
 		// Status 1:
 		// 7: module under voltage
 		// 6: charge over temperature

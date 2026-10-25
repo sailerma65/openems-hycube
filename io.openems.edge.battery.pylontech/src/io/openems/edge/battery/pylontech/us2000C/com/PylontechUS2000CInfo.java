@@ -125,12 +125,19 @@ public class PylontechUS2000CInfo extends HttpServlet implements Servlet, Openem
         else
         {
 	    	// Deine Logik für HTTP-GET Anfragen
-	        response.setContentType("application/json");
-	        response.setCharacterEncoding("UTF-8");
-	        
 	        String addrStr = request.getParameter("addr");
 	        
 	        String cmdStr = request.getParameter("cmd");
+	        
+	        String formatStr = request.getParameter("format");
+
+	        boolean rawFormat = formatStr != null ? formatStr.equalsIgnoreCase("raw") : false;
+
+	        response.setContentType( rawFormat ? "text/plain" : "application/json");
+
+	        response.setCharacterEncoding("UTF-8");
+	        
+	        CMD_DESCRIPTORS descr = null;
 	        
 	        int cmd = -1;
 	        
@@ -141,30 +148,30 @@ public class PylontechUS2000CInfo extends HttpServlet implements Servlet, Openem
 	        }
 	        else if( Character.isDigit( cmdStr.charAt(0)) )
 	        {
-	        	int cmdNr;
-	        	
 	            if( cmdStr.startsWith("0x"))
 	            {
-	            	cmdNr = Integer.parseInt(cmdStr.substring(2), 16 );
+	            	cmd = Integer.parseInt(cmdStr.substring(2), 16 );
 	            }
 	            else
 	            {
-	            	cmdNr = Integer.parseInt(cmdStr);
+	            	cmd = Integer.parseInt(cmdStr);
 	            }
-	        	for( CMD_DESCRIPTORS descr : cmdDescriptors )
+	        	for( CMD_DESCRIPTORS d : cmdDescriptors )
 	        	{
-	        		if( descr.getCmd() == cmdNr )
+	        		if( d.getCmd() == cmd )
 	        		{
-	        			cmd = descr.getCmd();
+	        			descr = d;
+	        			break;
 	        		}
 	        	}
 	        }
 	        else
 	        {
-	        	for( CMD_DESCRIPTORS descr : cmdDescriptors )
+	        	for( CMD_DESCRIPTORS d : cmdDescriptors )
 	        	{
-	        		if( descr.getQueryName().equalsIgnoreCase(cmdStr))
+	        		if( d.getQueryName().equalsIgnoreCase(cmdStr))
 	        		{
+	        			descr = d;
 	        			cmd = descr.getCmd();
 	        			break;
 	        		}
@@ -181,7 +188,9 @@ public class PylontechUS2000CInfo extends HttpServlet implements Servlet, Openem
 	        
 	        if( addr == -1 || ( addr >= 2 && addr < 2 + pyBattery.getParallelDevices() ) )
 	        {
-	        	response.getWriter().write( pyBattery.getJsonInfo(cmd, addr));
+	        	String responseString = rawFormat ? pyBattery.getRawInfo( cmd , addr ) : pyBattery.getJsonInfo( descr, addr);
+	        	
+	        	response.getWriter().write( responseString );
 	        }
 	        else
 	        {

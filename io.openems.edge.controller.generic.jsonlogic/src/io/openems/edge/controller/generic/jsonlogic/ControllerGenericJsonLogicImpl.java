@@ -97,6 +97,11 @@ public class ControllerGenericJsonLogicImpl extends AbstractOpenemsComponent
 
 			// default to OFF
 			channel.setNextValue(false);
+			
+			channel.onSetNextWrite(value -> {
+				channel.setNextValue(value);
+			});
+
 		}
 		
 		this.recursivelyParseVars(JsonUtils.parse(config.rule()));

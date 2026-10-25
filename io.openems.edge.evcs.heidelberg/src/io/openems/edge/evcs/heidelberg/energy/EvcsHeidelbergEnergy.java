@@ -38,7 +38,8 @@ public interface EvcsHeidelbergEnergy extends ManagedEvcs, ElectricityMeter, Ope
 		TEMPERATURE_PCB(Doc.of(OpenemsType.INTEGER) //
 						.unit(Unit.DEZIDEGREE_CELSIUS)),//
 		ENERGY_SINCE_POWER_ON(Doc.of(OpenemsType.LONG) //
-								.unit(Unit.CUMULATED_WATT_HOURS))
+								.unit(Unit.CUMULATED_WATT_HOURS)
+								.persistencePriority(PersistencePriority.HIGH))
 		;
 
 		private final Doc doc;

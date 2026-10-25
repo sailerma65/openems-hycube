@@ -12,6 +12,7 @@ import io.openems.common.channel.PersistencePriority;
 import io.openems.common.channel.Unit;
 import io.openems.common.types.OpenemsType;
 import io.openems.edge.battery.api.Battery;
+import io.openems.edge.battery.pylontech.us2000C.com.PylontechSerialProtocol.CMD_DESCRIPTORS;
 import io.openems.edge.battery.pylontech.us2000C.statemachine.StateMachine.State;
 import io.openems.edge.common.channel.Channel;
 import io.openems.edge.common.channel.Doc;
@@ -178,6 +179,10 @@ public interface PylontechUS2000CBattery extends Battery, OpenemsComponent, Star
 				.persistencePriority(PersistencePriority.HIGH) //
 				.accessMode(READ_ONLY) //
 				.text("Discharge enable")),
+		FULL_CHARGE_REQUEST(Doc.of(BOOLEAN)
+				.persistencePriority(PersistencePriority.HIGH) //
+				.accessMode(READ_ONLY) //
+				.text("Full Charge Request")),
 		SYSTEM_TEMPERATURE(Doc.of(INTEGER) //
 				.unit(DEGREE_CELSIUS) //
 				.accessMode(READ_ONLY) //
@@ -274,6 +279,20 @@ public interface PylontechUS2000CBattery extends Battery, OpenemsComponent, Star
 	 * 
 	 * @return The BASIC_STATUS channel
 	 */
+	public default Channel<Boolean> getFullChargeRequestChannel() {
+		return this.channel(ChannelId.FULL_CHARGE_REQUEST );
+	}
+	
+	public default boolean isFullChargeRequest()
+	{
+		return getFullChargeRequestChannel().value().orElse(Boolean.FALSE);
+	}
+
+	/**
+	 * Get the basic status channel.
+	 * 
+	 * @return The BASIC_STATUS channel
+	 */
 	public default Channel<Boolean> getDischargeEnabledChannel() {
 		return this.channel(ChannelId.DISCHARGE_ENABLE);
 	}
@@ -352,7 +371,9 @@ public interface PylontechUS2000CBattery extends Battery, OpenemsComponent, Star
 		return getPylontechBatteryVoltageChannel().value().orElse(0);
 	}
 	
-	public String getJsonInfo( int cmd, int addr );
+	public String getJsonInfo( CMD_DESCRIPTORS descr, int addr );
 	
+	public String getRawInfo( int cmd, int addr );
+
 	public int getParallelDevices();
 }

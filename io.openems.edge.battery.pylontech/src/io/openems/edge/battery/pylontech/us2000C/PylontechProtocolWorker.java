@@ -3,10 +3,12 @@ package io.openems.edge.battery.pylontech.us2000C;
 import java.io.IOException;
 import java.io.StringWriter;
 import java.lang.reflect.Type;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedList;
 import java.util.Map.Entry;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,44 +27,60 @@ import io.openems.edge.battery.pylontech.us2000C.com.PylontechSerialProtocol.Fra
 import io.openems.edge.battery.pylontech.us2000C.com.PylontechSerialProtocol.ManagementInfo;
 import io.openems.edge.battery.pylontech.us2000C.com.PylontechSerialProtocol.ManufacturerInfo;
 import io.openems.edge.battery.pylontech.us2000C.com.PylontechSerialProtocol.ModuleValues;
+import io.openems.edge.battery.pylontech.us2000C.com.PylontechSerialProtocol.ProtocolInfo;
 
 class PylontechProtocolWorker extends AbstractWorker{
+
+	class InsertedCycle
+	{
+		int address;
+		int cmd;
+		CompletableFuture<Frame> result;
+		
+		InsertedCycle( int address, int cmd )
+		{
+			this.address = address;
+			this.cmd = cmd;
+			this.result = new CompletableFuture<Frame>();
+		}
+	}
+	
 	class FrameData
 	{
 		int address;
-		CMD_DESCRIPTORS cmd;
+		int cmd;
 		Frame frame;
 		
 		Object data;
 		Type dataType;
 		
-		FrameData( int _address, CMD_DESCRIPTORS _descr, Frame _frame )
+		FrameData( int _address, int _cmd, Frame _frame )
 		{
 			address = _address;
-			cmd = _descr;
+			cmd = _cmd;
 			frame = _frame;
 			
-			switch( cmd )
+			switch( _cmd )
 			{
-			case CMD_GET_SERIAL_NUMBER:
+			case PylontechSerialProtocol.CMD_KEY_GET_SERIAL_NUMBER:
 				data = PylontechSerialProtocol.parseModuleSerialNumber( frame.info() );
 				dataType = String.class;
 				break;
-			case CMD_GET_MANUFACTURER_INFO:
+			case PylontechSerialProtocol.CMD_KEY_GET_MANUFACTURER_INFO:
 				data = PylontechSerialProtocol.parseManufacturerInfo(frame.info());
 				dataType = ManufacturerInfo.class;
 				
 				break;
-			case CMD_GET_ALARM_INFO:
-				data = PylontechSerialProtocol.parseAlarm(frame.info());
+			case PylontechSerialProtocol.CMD_KEY_GET_ALARM_INFO:
+				data = PylontechSerialProtocol.parseAlarm(frame.info(), address );
 				dataType = AlarmInfo.class;
 				break;
-			case CMD_GET_ANALOG_VALUE:
+			case PylontechSerialProtocol.CMD_KEY_GET_ANALOG_VALUE:
 				data = PylontechSerialProtocol.parseValuesSingle(frame.info());
 				dataType = ModuleValues.class;
 				
 				break;
-			case CMD_GET_MANAGEMENT_INFO:
+			case PylontechSerialProtocol.CMD_KEY_GET_MANAGEMENT_INFO:
 				data = PylontechSerialProtocol.parseManagementInfo(frame.info());
 				dataType = ManagementInfo.class;
 				break;
@@ -77,6 +95,11 @@ class PylontechProtocolWorker extends AbstractWorker{
 		public <TYPE> TYPE getData()
 		{
 			return ( TYPE )data;
+		}
+		
+		public String getRawData()
+		{
+			return frame.asciiFrame();
 		}
 		
 		public Type getType()
@@ -140,10 +163,14 @@ class PylontechProtocolWorker extends AbstractWorker{
 		
 	}
 
+	private LinkedList<InsertedCycle> insertedCycles = new LinkedList<>();
+	
 	private PylontechSerialProtocol pylontechAdapter;
 
 	// sync
 	private PYLONTECH_POLL_CYCLE pylontechPollCycle = PYLONTECH_POLL_CYCLE.SCAN_SERIAL_NUMBER;
+	
+	private InsertedCycle currentInsertedCycle = null;
 	
 	private LinkedHashMap<FrameKey, FrameData> receivedFrames = new LinkedHashMap<>();
 
@@ -292,7 +319,14 @@ class PylontechProtocolWorker extends AbstractWorker{
 		{
 			if( pylontechPollCycle == PYLONTECH_POLL_CYCLE.INACTIVE )
 			{
-				return;
+				if( currentInsertedCycle == null && !insertedCycles.isEmpty() && commDirection == PYLONTECH_COMM_DIR.REQUEST )
+				{
+					currentInsertedCycle = insertedCycles.removeFirst();
+				}
+				else
+				{
+					return;
+				}
 			}
 
 		    currentPollCycle = pylontechPollCycle;
@@ -303,7 +337,15 @@ class PylontechProtocolWorker extends AbstractWorker{
 		if( commDirection == PYLONTECH_COMM_DIR.REQUEST )
 		{
 			pylontechAdapter.clearReceiveBuffer();
-			pylontechAdapter.sendCmdWithAddressInfo( pollAddress, currentPollCycle.descriptor );
+			
+			if( currentInsertedCycle != null )
+			{
+				pylontechAdapter.sendCmdRaw( currentInsertedCycle.address, currentInsertedCycle.cmd );
+			}
+			else
+			{
+				pylontechAdapter.sendCmdWithAddressInfo( pollAddress, currentPollCycle.descriptor );
+			}
 			commDirection = PYLONTECH_COMM_DIR.RESPONSE;
 		}
 		else
@@ -314,100 +356,121 @@ class PylontechProtocolWorker extends AbstractWorker{
 				
 				if( receivedFrame != null )
 				{
-					FrameKey key = new FrameKey( pollAddress, currentPollCycle.descriptor );
-					FrameData data = new FrameData(pollAddress, currentPollCycle.descriptor, receivedFrame );
-					
-					synchronized (receivedFrames ) {
-						receivedFrames.put(key, data);
-					}
-					
-					synchronized( saveHashMap ) {
-						saveHashMap.put(key, data);
-					}
-					
-					switch( currentPollCycle )
+					if( currentInsertedCycle != null )
 					{
-					case SCAN_SERIAL_NUMBER:
-						nextPollCycle = PYLONTECH_POLL_CYCLE.SCAN_MANUFACTURER_INFO;
-						break;
-					case SCAN_MANUFACTURER_INFO: 
-				        if( commState == PYLONTECH_COMM_STATE.INITIALIZING )
-				        {
-				        	pollAddress++;
-				        	
-				        	if( pollAddress < pollMax )
-				        	{
-				        		nextPollCycle = PYLONTECH_POLL_CYCLE.SCAN_SERIAL_NUMBER;
-				        		break;
-				        	}
-				        	else if( deviceCheckCycle < PY_MAX_DEVICE_CHECK_CYCLES )
-				        	{
-								deviceCheckResults[ deviceCheckCycle ] = pollMax - PylontechUS2000CBatteryImpl.PY_START_ADDRESS;
-								deviceCheckCycle++;
-				        		nextPollCycle = PYLONTECH_POLL_CYCLE.SCAN_SERIAL_NUMBER;
-				        		pollAddress = PylontechUS2000CBatteryImpl.PY_START_ADDRESS;
-				        		break;
-
-				        	}
-				        	else if( !checkDeviceCount() )
-				        	{
-			        			throw new IOException("Error in device count detection");
-				        	}
-				        }
-				        nextPollCycle = PYLONTECH_POLL_CYCLE.RUN_ANALOG_VALUES;
-				        pollAddress = PylontechUS2000CBatteryImpl.PY_START_ADDRESS;
-				        //m_valueCycles = PY_VALUE_CYCLES;
-				        pollErrorCount = 0;
-				        break;
-					case RUN_ANALOG_VALUES:
-						// read values
-						
-						pollAddress++;
-						
-						if( pollAddress >= pollMax )
+						synchronized( this )
 						{
-							pollAddress = PylontechUS2000CBatteryImpl.PY_START_ADDRESS;
-							nextPollCycle = PYLONTECH_POLL_CYCLE.RUN_CMD_GET_ALARM_INFO;
-						}
-				        break;
-					case RUN_CMD_GET_ALARM_INFO:
-						// read values
-						
-						pollAddress++;
-
-						if( pollAddress >= pollMax )
-						{
-							pollAddress = PylontechUS2000CBatteryImpl.PY_START_ADDRESS;
-							nextPollCycle = PYLONTECH_POLL_CYCLE.RUN_CMD_GET_MANAGEMENT_INFO;
-						}
-				        break;
-					case RUN_CMD_GET_MANAGEMENT_INFO:
-						// read values
-						
-						pollAddress++;
-
-						if( pollAddress >= pollMax )
-						{
-							pollAddress = PylontechUS2000CBatteryImpl.PY_START_ADDRESS;
-							nextPollCycle = PYLONTECH_POLL_CYCLE.INACTIVE;
+							currentInsertedCycle.result.complete( receivedFrame );
 							
-							//m_valueCycles = PY_VALUE_CYCLES;
-							pollErrorCount = 0;
-							
-							commState = PYLONTECH_COMM_STATE.RUNNING;
-						}
-				        break;
-					case INACTIVE:
-					default:
-						break;
+							currentInsertedCycle = null;
+						}						
+					}
+					else
+					{
+						FrameKey key = new FrameKey( pollAddress, currentPollCycle.descriptor );
+						FrameData data = new FrameData(pollAddress, currentPollCycle.descriptor.getCmd(), receivedFrame );
 						
+						synchronized (receivedFrames ) {
+							receivedFrames.put(key, data);
+						}
+						
+						synchronized( saveHashMap ) {
+							saveHashMap.put(key, data);
+						}
+						
+						switch( currentPollCycle )
+						{
+						case SCAN_SERIAL_NUMBER:
+							nextPollCycle = PYLONTECH_POLL_CYCLE.SCAN_MANUFACTURER_INFO;
+							break;
+						case SCAN_MANUFACTURER_INFO: 
+					        if( commState == PYLONTECH_COMM_STATE.INITIALIZING )
+					        {
+					        	pollAddress++;
+					        	
+					        	if( pollAddress < pollMax )
+					        	{
+					        		nextPollCycle = PYLONTECH_POLL_CYCLE.SCAN_SERIAL_NUMBER;
+					        		break;
+					        	}
+					        	else if( deviceCheckCycle < PY_MAX_DEVICE_CHECK_CYCLES )
+					        	{
+									deviceCheckResults[ deviceCheckCycle ] = pollMax - PylontechUS2000CBatteryImpl.PY_START_ADDRESS;
+									deviceCheckCycle++;
+					        		nextPollCycle = PYLONTECH_POLL_CYCLE.SCAN_SERIAL_NUMBER;
+					        		pollAddress = PylontechUS2000CBatteryImpl.PY_START_ADDRESS;
+					        		break;
+	
+					        	}
+					        	else if( !checkDeviceCount() )
+					        	{
+				        			throw new IOException("Error in device count detection");
+					        	}
+					        }
+					        nextPollCycle = PYLONTECH_POLL_CYCLE.RUN_ANALOG_VALUES;
+					        pollAddress = PylontechUS2000CBatteryImpl.PY_START_ADDRESS;
+					        //m_valueCycles = PY_VALUE_CYCLES;
+					        pollErrorCount = 0;
+					        break;
+						case RUN_ANALOG_VALUES:
+							// read values
+							
+							pollAddress++;
+							
+							if( pollAddress >= pollMax )
+							{
+								pollAddress = PylontechUS2000CBatteryImpl.PY_START_ADDRESS;
+								nextPollCycle = PYLONTECH_POLL_CYCLE.RUN_CMD_GET_ALARM_INFO;
+							}
+					        break;
+						case RUN_CMD_GET_ALARM_INFO:
+							// read values
+							
+							pollAddress++;
+	
+							if( pollAddress >= pollMax )
+							{
+								pollAddress = PylontechUS2000CBatteryImpl.PY_START_ADDRESS;
+								nextPollCycle = PYLONTECH_POLL_CYCLE.RUN_CMD_GET_MANAGEMENT_INFO;
+							}
+					        break;
+						case RUN_CMD_GET_MANAGEMENT_INFO:
+							// read values
+							
+							pollAddress++;
+	
+							if( pollAddress >= pollMax )
+							{
+								pollAddress = PylontechUS2000CBatteryImpl.PY_START_ADDRESS;
+								nextPollCycle = PYLONTECH_POLL_CYCLE.INACTIVE;
+								
+								//m_valueCycles = PY_VALUE_CYCLES;
+								pollErrorCount = 0;
+								
+								commState = PYLONTECH_COMM_STATE.RUNNING;
+							}
+					        break;
+						case INACTIVE:
+						default:
+							break;
+							
+						}
 					}
 					commDirection = PYLONTECH_COMM_DIR.REQUEST;
 				}
 			}
 			catch( FrameTimeoutException fex )
 			{
-				if( commState == PYLONTECH_COMM_STATE.INITIALIZING )
+				if( currentInsertedCycle != null )
+				{
+					synchronized( this )
+					{
+						currentInsertedCycle.result.completeExceptionally(fex);
+						
+						currentInsertedCycle = null;
+					}						
+				}
+				else if( commState == PYLONTECH_COMM_STATE.INITIALIZING )
 				{
 					if( deviceCheckCycle < PY_MAX_DEVICE_CHECK_CYCLES )
 					{
@@ -569,53 +632,141 @@ class PylontechProtocolWorker extends AbstractWorker{
 		return null;
 	}
 	
-	public String getJsonData( int cmd, int address )
+	private String getSavedRawObject( CMD_DESCRIPTORS descr, int address )
+	{
+		synchronized( saveHashMap )
+		{
+			FrameKey key = new FrameKey( address, descr );
+		
+	
+			FrameData frameData = saveHashMap.get(key);
+		
+			if( frameData != null )
+			{
+				return frameData.frame.asciiFrame();
+			}
+		}
+		return null;
+	}
+	
+
+	public String getJsonData( CMD_DESCRIPTORS descr, int address )
+	{
+			Object dataObj;
+			
+			if( address == -1 )
+			{
+				HashMap<Integer, Object> resultMap = new HashMap<Integer, Object>();
+
+				dataObj = resultMap;
+
+				for( int i = 0; i < deviceCount ; i++ )
+				{
+					Object result = null;
+
+					result = getSavedDataObject( descr, PylontechUS2000CBatteryImpl.PY_START_ADDRESS + i );
+					
+					if( result != null )
+					{
+						resultMap.put( ( i + PylontechUS2000CBatteryImpl.PY_START_ADDRESS ), result );
+					}
+				}
+			}
+			else
+			{
+				dataObj = getSavedDataObject(descr, address);
+			}
+			
+			if( dataObj != null )
+			{
+				Gson gson = new Gson();
+				
+				StringWriter swr = new StringWriter();
+				
+				JsonWriter jwr = new JsonWriter( swr );
+				
+				jwr.setFormattingStyle(FormattingStyle.PRETTY);
+				
+				jwr.setIndent("  ");
+				
+				gson.toJson( dataObj, dataObj.getClass(), jwr );
+				
+				return swr.toString();
+			}
+		
+			return "Error!";
+	}
+
+	public String getRawData( int cmd, int address )
 	{
 			CMD_DESCRIPTORS descr = getCmdDescriptor(cmd);
 			
 			if( descr != null )
 			{
-				Object dataObj;
+				StringBuffer resultStr = new StringBuffer();
 				
 				if( address == -1 )
 				{
-					HashMap<Integer, Object> resultMap = new HashMap<Integer, Object>();
-
-					dataObj = resultMap;
-
 					for( int i = 0; i < deviceCount ; i++ )
 					{
-						Object result = getSavedDataObject( descr, PylontechUS2000CBatteryImpl.PY_START_ADDRESS + i );
-						
-						if( result != null )
+						if( !resultStr.isEmpty() )
 						{
-							resultMap.put( ( i + PylontechUS2000CBatteryImpl.PY_START_ADDRESS ), result );
+							resultStr.append("\n");
+						}
+						
+						String rawData = getSavedRawObject( descr, PylontechUS2000CBatteryImpl.PY_START_ADDRESS + i );
+						
+						if( rawData != null )
+						{
+							resultStr.append(rawData);
 						}
 					}
 				}
 				else
 				{
-					dataObj = getSavedDataObject(descr, address);
+					String rawData = getSavedRawObject(descr, address);
+					
+					if( rawData != null )
+					{
+						resultStr.append(rawData);
+					}
 				}
-				
-				if( dataObj != null )
-				{
-					Gson gson = new Gson();
-					
-					StringWriter swr = new StringWriter();
-					
-					JsonWriter jwr = new JsonWriter( swr );
-					
-					jwr.setFormattingStyle(FormattingStyle.PRETTY);
-					
-					jwr.setIndent("  ");
-					
-					gson.toJson( dataObj, dataObj.getClass(), jwr );
-					
-					return swr.toString();
-				}
+				return resultStr.toString();
+		}
+		else
+		{
+			try
+			{
+				return requestData(address, cmd ).getRawData();
+			}
+			catch( Exception ex )
+			{
+				log.error(ex.getMessage());
+			}
 		}
 		
 		return "Error!";
+	}
+	
+	private FrameData requestData( int address, int cmd ) 
+	{
+		InsertedCycle insertedCycle = new InsertedCycle( address, cmd );
+
+		synchronized( this )
+		{
+			insertedCycles.add(insertedCycle);
+		}
+
+		Frame frame;
+		try
+		{
+			frame = insertedCycle.result.get( 5, TimeUnit.SECONDS );
+		}
+		catch( Exception ex )
+		{
+			frame = null;
+		}
+		
+		return new FrameData( address, cmd, frame );
 	}
 }

@@ -47,11 +47,17 @@ public @interface Config {
 	@AttributeDefinition(name = "Hycube Battery ID", description = "Battery-ID which the batteryinverter is connected to")
 	String battery_id() default "battery0";
 
-	@AttributeDefinition(name = "Denkovi Board ID", description = "Digital output board")
+	@AttributeDefinition(name = "DigOut Board ID", description = "Digital output board")
 	String io_id() default "io0";
 
 	@AttributeDefinition(name = "Battery switch pin", description = "Denkovi Board output pin to switch battery connection")
 	int io_battery_pin() default 7;
+
+	@AttributeDefinition(name = "Softstart pin", description = "Denkovi Board output pin to enable soft start")
+	int io_softstart_pin() default 5;
+
+	@AttributeDefinition(name = "Max. charge voltage", description = "Max. charge voltage: if <= 0.0 value from BMS is used")
+	double maxChargeVoltage() default 0.0;
 
 	String webconsole_configurationFactory_nameHint() default "Hycube ESS [{id}]";
 
