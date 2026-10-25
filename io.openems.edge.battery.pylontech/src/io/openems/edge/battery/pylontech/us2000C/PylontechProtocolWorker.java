@@ -317,16 +317,13 @@ class PylontechProtocolWorker extends AbstractWorker{
 		
 		synchronized( this )
 		{
-			if( pylontechPollCycle == PYLONTECH_POLL_CYCLE.INACTIVE )
+			if( currentInsertedCycle == null && !insertedCycles.isEmpty() && commDirection == PYLONTECH_COMM_DIR.REQUEST )
 			{
-				if( currentInsertedCycle == null && !insertedCycles.isEmpty() && commDirection == PYLONTECH_COMM_DIR.REQUEST )
-				{
-					currentInsertedCycle = insertedCycles.removeFirst();
-				}
-				else
-				{
-					return;
-				}
+				currentInsertedCycle = insertedCycles.removeFirst();
+			}
+			else if( pylontechPollCycle == PYLONTECH_POLL_CYCLE.INACTIVE )
+			{
+				return;
 			}
 
 		    currentPollCycle = pylontechPollCycle;
@@ -492,8 +489,8 @@ class PylontechProtocolWorker extends AbstractWorker{
 						
 						nextPollCycle = checkErrorCount( nextPollCycle, currentPollCycle, fex );						
 					}
-					commDirection = PYLONTECH_COMM_DIR.REQUEST;
 				}
+				commDirection = PYLONTECH_COMM_DIR.REQUEST;
 			}
 			catch( RuntimeException ex )
 			{
@@ -509,6 +506,8 @@ class PylontechProtocolWorker extends AbstractWorker{
 				log.error( ex.getClass().getSimpleName() + " in state " + currentPollCycle, ex );
 				
 				nextPollCycle = checkErrorCount( nextPollCycle, currentPollCycle, ex );
+
+				commDirection = PYLONTECH_COMM_DIR.REQUEST;
 			}
 		}
 		
@@ -701,7 +700,7 @@ class PylontechProtocolWorker extends AbstractWorker{
 	{
 			CMD_DESCRIPTORS descr = getCmdDescriptor(cmd);
 			
-			if( descr != null )
+			if( false )//descr != null )
 			{
 				StringBuffer resultStr = new StringBuffer();
 				
