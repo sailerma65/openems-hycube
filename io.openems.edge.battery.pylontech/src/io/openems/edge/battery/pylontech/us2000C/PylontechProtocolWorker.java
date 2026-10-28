@@ -3,6 +3,7 @@ package io.openems.edge.battery.pylontech.us2000C;
 import java.io.IOException;
 import java.io.StringWriter;
 import java.lang.reflect.Type;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedList;
@@ -27,10 +28,13 @@ import io.openems.edge.battery.pylontech.us2000C.com.PylontechSerialProtocol.Fra
 import io.openems.edge.battery.pylontech.us2000C.com.PylontechSerialProtocol.ManagementInfo;
 import io.openems.edge.battery.pylontech.us2000C.com.PylontechSerialProtocol.ManufacturerInfo;
 import io.openems.edge.battery.pylontech.us2000C.com.PylontechSerialProtocol.ModuleValues;
-import io.openems.edge.battery.pylontech.us2000C.com.PylontechSerialProtocol.ProtocolInfo;
+import io.openems.edge.battery.pylontech.us2000C.com.PylontechSerialProtocol.SystemParameters;
 
 class PylontechProtocolWorker extends AbstractWorker{
 
+	private static final CMD_DESCRIPTORS[] polledCommands = new CMD_DESCRIPTORS[] { CMD_DESCRIPTORS.CMD_GET_SERIAL_NUMBER, CMD_DESCRIPTORS.CMD_GET_MANUFACTURER_INFO,
+			CMD_DESCRIPTORS.CMD_GET_ANALOG_VALUE, CMD_DESCRIPTORS.CMD_GET_MANAGEMENT_INFO, CMD_DESCRIPTORS.CMD_GET_ALARM_INFO };
+	
 	class InsertedCycle
 	{
 		int address;
@@ -71,6 +75,10 @@ class PylontechProtocolWorker extends AbstractWorker{
 				dataType = ManufacturerInfo.class;
 				
 				break;
+			case PylontechSerialProtocol.CMD_KEY_GET_SYSTEM_PARAMETERS:
+				data = PylontechSerialProtocol.parseSystemParameters(frame.info());
+				dataType = SystemParameters.class;
+				break;
 			case PylontechSerialProtocol.CMD_KEY_GET_ALARM_INFO:
 				data = PylontechSerialProtocol.parseAlarm(frame.info(), address );
 				dataType = AlarmInfo.class;
@@ -99,7 +107,7 @@ class PylontechProtocolWorker extends AbstractWorker{
 		
 		public String getRawData()
 		{
-			return frame.asciiFrame();
+			return new String( frame.rawFrame(), StandardCharsets.US_ASCII );
 		}
 		
 		public Type getType()
@@ -176,8 +184,6 @@ class PylontechProtocolWorker extends AbstractWorker{
 
 	private HashMap<FrameKey, FrameData> saveHashMap = new HashMap<>();
 
-	private HashMap<Integer, CMD_DESCRIPTORS> cmdDescriptorMap = null;
-	
 	// single thr.
 	private int pollAddress;
 	
@@ -598,34 +604,33 @@ class PylontechProtocolWorker extends AbstractWorker{
 		}
 	}
 	
-	private CMD_DESCRIPTORS getCmdDescriptor( int cmd )
+	private CMD_DESCRIPTORS getPolledCmdDescriptor( int cmd )
 	{
-		if( cmdDescriptorMap == null )
+		for( CMD_DESCRIPTORS descr : polledCommands )
 		{
-			cmdDescriptorMap = new HashMap<Integer, PylontechSerialProtocol.CMD_DESCRIPTORS>();
-		
-			for(CMD_DESCRIPTORS cmdDescr : CMD_DESCRIPTORS.values() )
+			if( descr.getCmd() == cmd )
 			{
-				cmdDescriptorMap.put( cmdDescr.getCmd(), cmdDescr );
+				return descr;
 			}
 		}
-		
-		return cmdDescriptorMap.get( cmd );
+		return null;
 	}
-	
 	
 	private Object getSavedDataObject( CMD_DESCRIPTORS descr, int address )
 	{
-		synchronized( saveHashMap )
+		if( descr != null )
 		{
-			FrameKey key = new FrameKey( address, descr );
-		
-	
-			FrameData frameData = saveHashMap.get(key);
-		
-			if( frameData != null )
+			synchronized( saveHashMap )
 			{
-				return frameData.data;
+				FrameKey key = new FrameKey( address, descr );
+			
+		
+				FrameData frameData = saveHashMap.get(key);
+			
+				if( frameData != null )
+				{
+					return frameData.data;
+				}
 			}
 		}
 		return null;
@@ -633,16 +638,19 @@ class PylontechProtocolWorker extends AbstractWorker{
 	
 	private String getSavedRawObject( CMD_DESCRIPTORS descr, int address )
 	{
-		synchronized( saveHashMap )
+		if( descr != null )
 		{
-			FrameKey key = new FrameKey( address, descr );
-		
-	
-			FrameData frameData = saveHashMap.get(key);
-		
-			if( frameData != null )
+			synchronized( saveHashMap )
 			{
-				return frameData.frame.asciiFrame();
+				FrameKey key = new FrameKey( address, descr );
+			
+		
+				FrameData frameData = saveHashMap.get(key);
+			
+				if( frameData != null )
+				{
+					return new String( frameData.frame.rawFrame(), StandardCharsets.US_ASCII );
+				}
 			}
 		}
 		return null;
@@ -653,54 +661,68 @@ class PylontechProtocolWorker extends AbstractWorker{
 	{
 			Object dataObj;
 			
-			if( address == -1 )
+			if( descr != null )
 			{
-				HashMap<Integer, Object> resultMap = new HashMap<Integer, Object>();
-
-				dataObj = resultMap;
-
-				for( int i = 0; i < deviceCount ; i++ )
+				if( address == -1 )
 				{
-					Object result = null;
-
-					result = getSavedDataObject( descr, PylontechUS2000CBatteryImpl.PY_START_ADDRESS + i );
-					
-					if( result != null )
+					HashMap<Integer, Object> resultMap = new HashMap<Integer, Object>();
+	
+					dataObj = resultMap;
+	
+					for( int i = 0; i < deviceCount ; i++ )
 					{
-						resultMap.put( ( i + PylontechUS2000CBatteryImpl.PY_START_ADDRESS ), result );
+						Object result = null;
+	
+						result = getSavedDataObject( descr, PylontechUS2000CBatteryImpl.PY_START_ADDRESS + i );
+						
+						if( result != null )
+						{
+							resultMap.put( ( i + PylontechUS2000CBatteryImpl.PY_START_ADDRESS ), result );
+						}
 					}
 				}
-			}
-			else
-			{
-				dataObj = getSavedDataObject(descr, address);
-			}
-			
-			if( dataObj != null )
-			{
-				Gson gson = new Gson();
+				else
+				{
+					dataObj = getSavedDataObject(descr, address);
+				}
 				
-				StringWriter swr = new StringWriter();
+				if( dataObj == null && address != -1 && descr.isParseable() )
+				{
+					try
+					{
+						dataObj = requestData(address, descr.getCmd() ).getData();
+					}
+					catch( Exception ex )
+					{
+						log.error(ex.getMessage());
+					}
+				}
 				
-				JsonWriter jwr = new JsonWriter( swr );
-				
-				jwr.setFormattingStyle(FormattingStyle.PRETTY);
-				
-				jwr.setIndent("  ");
-				
-				gson.toJson( dataObj, dataObj.getClass(), jwr );
-				
-				return swr.toString();
-			}
-		
+				if( dataObj != null )
+				{
+					Gson gson = new Gson();
+					
+					StringWriter swr = new StringWriter();
+					
+					JsonWriter jwr = new JsonWriter( swr );
+					
+					jwr.setFormattingStyle(FormattingStyle.PRETTY);
+					
+					jwr.setIndent("  ");
+					
+					gson.toJson( dataObj, dataObj.getClass(), jwr );
+					
+					return swr.toString();
+				}
+			}		
 			return "Error!";
 	}
 
 	public String getRawData( int cmd, int address )
 	{
-			CMD_DESCRIPTORS descr = getCmdDescriptor(cmd);
+			CMD_DESCRIPTORS descr = getPolledCmdDescriptor(cmd);
 			
-			if( false )//descr != null )
+			if( descr != null )
 			{
 				StringBuffer resultStr = new StringBuffer();
 				
@@ -732,7 +754,7 @@ class PylontechProtocolWorker extends AbstractWorker{
 				}
 				return resultStr.toString();
 		}
-		else
+		else if( address != -1 )
 		{
 			try
 			{

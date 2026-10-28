@@ -54,15 +54,9 @@ public interface PylontechUS2000CBattery extends Battery, OpenemsComponent, Star
 		SYSTEM_CURRENT_PROTECTION(Doc.of(Level.FAULT) //
 				.accessMode(READ_ONLY) //
 				.text("Current Protection active")),
-		SYSTEM_OVER_VOLTAGE(Doc.of(Level.FAULT) //
-				.accessMode(READ_ONLY) //
-				.text("Voltage Protection Active.")),
 		SYSTEM_TEMPERATURE_PROTECTION(Doc.of(Level.FAULT) //
 				.accessMode(READ_ONLY) //
 				.text("Temperature Protection Active")),
-		SYSTEM_UNDER_VOLTAGE(Doc.of(Level.WARNING) //
-				.accessMode(READ_ONLY) //
-				.text("Voltage Warning")),
 		SYSTEM_CURRENT_WARNING(Doc.of(Level.WARNING) //
 				.accessMode(READ_ONLY) //
 				.text("Current Warning")),
@@ -126,12 +120,6 @@ public interface PylontechUS2000CBattery extends Battery, OpenemsComponent, Star
 		COMMUNICATION_ERROR(Doc.of(Level.FAULT) //
 				.accessMode(READ_ONLY) //
 				.text("Communication Error")),
-		BATTERY_CELL_LOW_VOLTAGE_WARNING(Doc.of(Level.WARNING) //
-				.accessMode(READ_ONLY) //
-				.text("Battery cell low voltage warning")),
-		BATTERY_CELL_HIGH_VOLTAGE_WARNING(Doc.of(Level.WARNING) //
-				.accessMode(READ_ONLY) //
-				.text("Battery cell high voltage warning")),
 		PILE_LOW_VOLTAGE_WARNING(Doc.of(Level.WARNING) //
 				.accessMode(READ_ONLY) //
 				.text("Pile low voltage warning")),
@@ -150,21 +138,9 @@ public interface PylontechUS2000CBattery extends Battery, OpenemsComponent, Star
 		DISCHARGE_HIGH_TEMPERATURE_WARNING(Doc.of(Level.WARNING) //
 				.accessMode(READ_ONLY) //
 				.text("Discharge high temperature warning")),
-		CHARGE_OVER_CURRENT_WARNING(Doc.of(Level.WARNING) //
-				.accessMode(READ_ONLY) //
-				.text("Charge over current warning")),
-		DISCHARGE_OVER_CURRENT_WARNING(Doc.of(Level.WARNING) //
-				.accessMode(READ_ONLY) //
-				.text("Disharge over current warning")),
 		BMS_HIGH_TEMPERATURE_WARNING(Doc.of(Level.WARNING) //
 				.accessMode(READ_ONLY) //
 				.text("Main controller (BMS) high temperature warning")),
-		MODULE_HIGH_TEMPERATURE_WARNING(Doc.of(Level.WARNING) //
-				.accessMode(READ_ONLY) //
-				.text("Module high temperature warning")),
-		MODULE_LOW_TEMPERATURE_WARNING(Doc.of(Level.WARNING) //
-				.accessMode(READ_ONLY) //
-				.text("Module low temperature warning")),
 		MODULE_LOW_VOLTAGE_WARNING(Doc.of(Level.WARNING) //
 				.accessMode(READ_ONLY) //
 				.text("Module low voltage warning")),

@@ -94,9 +94,6 @@ public class PylontechUS2000CInfo extends HttpServlet implements Servlet, Openem
         // Wird aufgerufen, wenn die Komponente gestoppt oder gelöscht wird
     }
 
-    private static CMD_DESCRIPTORS[] cmdDescriptors = {CMD_DESCRIPTORS.CMD_GET_SERIAL_NUMBER,CMD_DESCRIPTORS.CMD_GET_MANUFACTURER_INFO,
-    		CMD_DESCRIPTORS.CMD_GET_ALARM_INFO,	CMD_DESCRIPTORS.CMD_GET_ANALOG_VALUE, CMD_DESCRIPTORS.CMD_GET_MANAGEMENT_INFO};
-    
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response) 
             throws ServletException, IOException {
@@ -156,7 +153,7 @@ public class PylontechUS2000CInfo extends HttpServlet implements Servlet, Openem
 	            {
 	            	cmd = Integer.parseInt(cmdStr);
 	            }
-	        	for( CMD_DESCRIPTORS d : cmdDescriptors )
+	        	for( CMD_DESCRIPTORS d : CMD_DESCRIPTORS.values() )
 	        	{
 	        		if( d.getCmd() == cmd )
 	        		{
@@ -167,7 +164,7 @@ public class PylontechUS2000CInfo extends HttpServlet implements Servlet, Openem
 	        }
 	        else
 	        {
-	        	for( CMD_DESCRIPTORS d : cmdDescriptors )
+	        	for( CMD_DESCRIPTORS d : CMD_DESCRIPTORS.values() )
 	        	{
 	        		if( d.getQueryName().equalsIgnoreCase(cmdStr))
 	        		{

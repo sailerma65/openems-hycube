@@ -37,6 +37,8 @@ import io.openems.edge.battery.pylontech.us2000C.com.SerialReadWrite;
 import io.openems.edge.battery.pylontech.us2000C.statemachine.Context;
 import io.openems.edge.battery.pylontech.us2000C.statemachine.StateMachine;
 import io.openems.edge.battery.pylontech.us2000C.statemachine.StateMachine.State;
+import io.openems.edge.common.channel.BooleanDoc;
+import io.openems.edge.common.channel.BooleanReadChannel;
 import io.openems.edge.common.channel.Channel;
 import io.openems.edge.common.channel.Doc;
 import io.openems.edge.common.channel.IntegerDoc;
@@ -65,6 +67,20 @@ import io.openems.edge.common.startstop.StartStoppable;
 public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implements 
 		OpenemsComponent, Battery, EventHandler, StartStoppable, PylontechUS2000CBattery {
 
+	private static final String PY_HV_WARNING = "PY_HV_WARNING";
+
+	private static final String PY_FULLY_CHARGED = "PY_FULLY_CHARGED";
+
+	private static final String PY_DIS_CHARGING = "PY_DISCHARGING";
+
+	private static final String PY_CHARGING = "PY_CHARGING";
+
+	private static final String PY_CHARGE_MOSFET = "PY_CHARGE_MOSFET";
+
+	private static final String PY_DISCHG_MOSFET = "PY_DISCHARGE_MOSFET";
+
+	private static final String PY_USE_BAT_POWER = "PY_USE_BAT_POWER";
+
 	// Beim Start: für alle Module 2 - 17 Abfrage 93: CMD_GET_SERIAL_NUMBER
 	// Wenn Antwort (Timeout max. 1500ms) Abfrage 51: CMD_GET_MANUFACTURER_INFO
 	
@@ -72,6 +88,8 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 	// Abfrage 68: CMD_GET_ALARM_INFO ca. alle 20s
 	// Abfrage 146: CMD_GET_MANAGEMENT_INFO ca. alle 20s
 	
+	private static final String PY_CURRENT = "PY_CURRENT";
+
 	private static final int BATTERY_VOLTAGE = 48;
 
 	public PylontechUS2000CBatteryImpl() {
@@ -115,14 +133,25 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 	static final int PY_MAX_DEVICES = 16;
 	
 	private int m_numberOfDevices = 0;
+	
+	private Long m_lastDataReceiveTime = null;
 
 	private AbstractDoc<Integer> m_currentDoc = 
 			new IntegerDoc().unit(Unit.MILLIAMPERE).persistencePriority( PersistencePriority.HIGH).accessMode(AccessMode.READ_ONLY);
 
+	private AbstractDoc<Boolean> m_stateDoc = 
+			new BooleanDoc().persistencePriority( PersistencePriority.HIGH).accessMode(AccessMode.READ_ONLY);
+
 	private HashMap<Integer, IntegerReadChannel> m_currentChannels = new HashMap<Integer, IntegerReadChannel>(); 
+
+	private HashMap<String, BooleanReadChannel> m_statesPerModule = new HashMap<String, BooleanReadChannel>();
 	
 	private final PylontechUS2000CBatteryProtectionDefinition protectionDef = new PylontechUS2000CBatteryProtectionDefinition( 0, 0, 0 );
-	
+
+	private double[] m_minCellVoltageOfModule = new double[ PY_MAX_DEVICES ];
+
+	private double[] m_maxCellVoltageOfModule  = new double[ PY_MAX_DEVICES ];
+
 	@Activate
 	void activate(ComponentContext context, Config config) throws OpenemsException {
 		this.config = config;
@@ -260,14 +289,30 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 		}
 	}
 
+	@SuppressWarnings("unchecked")
+	private <T> Channel<T> addChannelImpl( String name, AbstractDoc<T> doc )
+	{
+		return ( Channel<T> )this.addChannel( new io.openems.edge.common.channel.ChannelId()
+		{
+				@Override
+				public String name() {
+					return name;
+				}
+
+				@Override
+				public Doc doc() {
+					return doc;
+				}
+		
+		} );
+	}
+	
 	private void applyChannelValues() {
 		boolean newSerialNumber = false;
 		boolean newManufacturerInfo = false;
 		boolean newAlarmInfo = false;
 		boolean newModuleValue = false;
 		boolean newManagementInfo = false;
-		
-		boolean communicationError = m_worker.hasCommunicationError();
 		
 		if( m_worker.getDeviceCount() != m_numberOfDevices )
 		{
@@ -290,43 +335,110 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 			{
 				IntegerReadChannel currentChannel = m_currentChannels.get(i);
 				
+				String name;
+				
 				if( currentChannel == null )
 				{
-					String name = "PyCurrent" + i;
+					name = PY_CURRENT + i;
 					
-					currentChannel = ( IntegerReadChannel )this.addChannel( new io.openems.edge.common.channel.ChannelId()
-					{
-								@Override
-								public String name() {
-									return name;
-								}
+					currentChannel = ( IntegerReadChannel )addChannelImpl( name, m_currentDoc );
+				}
+				
+				name = PY_USE_BAT_POWER + i;
+				
+				if( !m_statesPerModule.containsKey(name) )
+				{
+					BooleanReadChannel ch = ( BooleanReadChannel )addChannelImpl(name, m_stateDoc);
+					
+					m_statesPerModule.put(name, ch );
+				}
+				
+				name = PY_DISCHG_MOSFET + i;
+				
+				if( !m_statesPerModule.containsKey(name) )
+				{
+					BooleanReadChannel ch = ( BooleanReadChannel )addChannelImpl(name, m_stateDoc);
+					
+					m_statesPerModule.put(name, ch );
+				}
+				
+				name = PY_CHARGE_MOSFET + i;
+				
+				if( !m_statesPerModule.containsKey(name) )
+				{
+					BooleanReadChannel ch = ( BooleanReadChannel )addChannelImpl(name, m_stateDoc);
+					
+					m_statesPerModule.put(name, ch );
+				}
+				
+				name = PY_CHARGING + i;
+				
+				if( !m_statesPerModule.containsKey(name) )
+				{
+					BooleanReadChannel ch = ( BooleanReadChannel )addChannelImpl(name, m_stateDoc);
+					
+					m_statesPerModule.put(name, ch );
+				}
+				
+				name = PY_DIS_CHARGING + i;
+				
+				if( !m_statesPerModule.containsKey(name) )
+				{
+					BooleanReadChannel ch = ( BooleanReadChannel )addChannelImpl(name, m_stateDoc);
+					
+					m_statesPerModule.put(name, ch );
+				}
 
-								@Override
-								public Doc doc() {
-									return m_currentDoc;
-								}
-						
-					} );
+				name = PY_FULLY_CHARGED + i;
+				
+				if( !m_statesPerModule.containsKey(name) )
+				{
+					BooleanReadChannel ch = ( BooleanReadChannel )addChannelImpl(name, m_stateDoc);
 					
-					m_currentChannels.put(i, currentChannel);
+					m_statesPerModule.put(name, ch );
+				}
+
+				name = PY_HV_WARNING + i;
+				
+				if( !m_statesPerModule.containsKey(name) )
+				{
+					BooleanReadChannel ch = ( BooleanReadChannel )addChannelImpl(name, m_stateDoc);
+					
+					m_statesPerModule.put(name, ch );
 				}
 			}
 		}
 		
+		boolean communicationError = m_worker.hasCommunicationError();
+		
+		boolean saveTimeStamp = false;
+		
 		channel(PylontechUS2000CBattery.ChannelId.COMMUNICATION_ERROR).setNextValue(communicationError);
+
+		if( stateMachine.getCurrentState() == State.RUNNING && m_lastDataReceiveTime != null )
+		{
+			if( System.currentTimeMillis() - m_lastDataReceiveTime > 60000l )
+			{
+				log.error( "Battery receive data timeout");
+				communicationError = true;
+			}
+		}
+		else
+		{
+			m_lastDataReceiveTime = null;
+		}
 		
 		if( communicationError )
 		{
 			try {
 				State current = stateMachine.getCurrentState();
 				
-				if( current == State.INIT_COMM || current == State.RUNNING )
+				if( current == State.INIT_COMM || current == State.GO_RUNNING || current == State.RUNNING )
 				{
 					setStartStop(StartStop.UNDEFINED);
 					m_worker.quitCommunicationERror();
 				}
 			} catch (OpenemsNamedException e) {
-				// TODO Auto-generated catch block
 				log.error( e.getMessage(), e);
 			}
 			return;
@@ -399,8 +511,7 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 			double minCellTemperature = Double.MAX_VALUE;
 			double maxCellTemperature = 0.0;
 
-			boolean charging = false;
-			boolean discharging = false;
+			saveTimeStamp = true;
 			
 			for( int i = 0; i < m_numberOfDevices; i++ )
 			{
@@ -412,29 +523,26 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 				double moduleCurrent =  m_moduleValues[ i ].current();
 				current = current + moduleCurrent;
 			
+				double minCellVoltageOfModule = Double.MAX_VALUE;
+				double maxCellVoltageOfModule = Double.MIN_VALUE;
+				
 				IntegerReadChannel currentChannel = m_currentChannels.get(i);
 				
 				if( currentChannel != null )
 				{
 					currentChannel.setNextValue( ( int ) ( moduleCurrent * 1000 ) );
 				}
-				
-				if( current > 0.1 )
-				{
-					charging = true;
-				}
-				else if( current < -0.1 )
-				{
-					discharging = true;
-				}
-				
 				capacity_Ah = capacity_Ah + m_moduleValues[ i ].remainingCapacity();
 				
 				for( int j = 0; j < m_moduleValues[i].numberOfCells(); j++ )
 				{
 					minCellVoltage = Math.min( minCellVoltage, m_moduleValues[i].cellVoltages()[j]);
 					maxCellVoltage = Math.max( maxCellVoltage, m_moduleValues[i].cellVoltages()[j]);
+					
+					minCellVoltageOfModule = Math.min( minCellVoltageOfModule, m_moduleValues[i].cellVoltages()[j]);
+					maxCellVoltageOfModule = Math.max( maxCellVoltageOfModule, m_moduleValues[i].cellVoltages()[j]);
 				}
+
 				for( int j = 0; j < m_moduleValues[i].numberOfTemperatures() - 1 ; j++ )
 				{
 					minCellTemperature = Math.min( minCellTemperature, m_moduleValues[i].groupedCellsTemperatures()[j]);
@@ -443,33 +551,10 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 				
 				minCellTemperature = Math.min( minCellTemperature , m_moduleValues[ i ].averageBmsTemperature() );
 				maxCellTemperature = Math.max( maxCellTemperature , m_moduleValues[ i ].averageBmsTemperature() );
+				
+				m_minCellVoltageOfModule[ i ] = minCellVoltageOfModule;
+				m_maxCellVoltageOfModule[ i ] = maxCellVoltageOfModule;
 			}
-			
-			if( charging && discharging )
-			{
-				charging = false;
-			}
-			
-			channel( PylontechUS2000CBattery.ChannelId.SYSTEM_CHARGE_STATUS ).setNextValue( charging );
-			channel( PylontechUS2000CBattery.ChannelId.SYSTEM_DISCHARGE_STATUS ).setNextValue( discharging );
-			channel( PylontechUS2000CBattery.ChannelId.SYSTEM_IDLE_STATUS ).setNextValue( !discharging && !charging );
-			
-			Status basicStatus = Status.UNDEFINED;
-			
-			if( charging )
-			{
-				basicStatus = Status.CHARGE;
-			}
-			else if( discharging )
-			{
-				basicStatus = Status.DISCHARGE;
-			}
-			else
-			{
-				basicStatus = Status.IDLE;
-			}
-			
-			channel( PylontechUS2000CBattery.ChannelId.BASIC_STATUS ).setNextValue( basicStatus );
 			
 			if( m_numberOfDevices > 0 )
 			{
@@ -513,26 +598,36 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 			double chargeVoltage = Double.MAX_VALUE;
 			double dischargeVoltage = 0.0;
 
-			boolean chargeEnable = true;
-			boolean dischargeEnable = true;
+			boolean chargeEnable = false;
+			boolean dischargeEnable = false;
 			boolean fullChargeRequest = false;
+			
+			saveTimeStamp = true;
 			
 			for( int i = 0; i < m_numberOfDevices; i++ )
 			{
-				chargeCurrent += m_managementInfos[ i ].chargeCurrentLimit(); // positive value
-				dischargeCurrent -= m_managementInfos[ i ].dischargeCurrentLimit(); // negative value
+				double moduleChargeLimit = m_managementInfos[ i ].chargeCurrentLimit(); // positive value
+				
+				double moduleDischargeLimit = m_managementInfos[ i ].dischargeCurrentLimit(); // negative value
+				
+				double dischargeCalculatedLimit = protectionDef.getDischargeTemperatureToPercent().getValue( m_minCellVoltageOfModule[ i ] ) * ( -25 );
+				
+				double chargeCalculatedLimit = protectionDef.getDischargeTemperatureToPercent().getValue( m_minCellVoltageOfModule[ i ] ) * 25;
+				
+				double resultingChargeLimit = Double.min(moduleChargeLimit, chargeCalculatedLimit);
+				
+				double resultingDishargeLimit = Double.min(moduleDischargeLimit, dischargeCalculatedLimit);
+
+				chargeCurrent += resultingChargeLimit; // positive value
+				
+				dischargeCurrent -= resultingDishargeLimit;
 				
 				chargeVoltage = Double.min( m_managementInfos[ i ].chargeVoltageLimit(), chargeVoltage );
 				dischargeVoltage = Double.max( m_managementInfos[ i ].dischargeVoltageLimit(), dischargeVoltage );
 
-				if( !m_managementInfos[ i ].chargeEnable() )
-				{
-					chargeEnable = false;
-				}
-				if( !m_managementInfos[ i ].dischargeEnable() )
-				{
-					dischargeEnable = false;
-				}
+				chargeEnable |= m_managementInfos[ i ].chargeEnable();
+
+				dischargeEnable |= m_managementInfos[ i ].dischargeEnable();
 				
 				fullChargeRequest |= m_managementInfos[ i ].fullChargeRequest();
 			}
@@ -571,84 +666,118 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 
 		if( newAlarmInfo && infoAvailable( m_alarmInfos ) )
 		{
-			boolean highVoltage = false;
-			boolean lowVoltage = false;
+//			boolean highVoltage = false;
+//			boolean lowVoltage = false;
 			boolean overVoltageProtection = false;
 			boolean underVoltageProtection = false;
 
-			boolean systemOverVoltage = false;
-			boolean systemUnderVoltage = false;
+//			boolean systemOverVoltage = false;
+//			boolean systemUnderVoltage = false;
 			boolean systemOverVoltageProtection = false;
 			boolean systemUnderVoltageProtection = false;
 
-			boolean chargeOverCurrent = false;
+//			boolean chargeOverCurrent = false;
 			boolean chargeOverCurrentProtection = false;
-			boolean dischargeOverCurrent = false;
+//			boolean dischargeOverCurrent = false;
 			boolean dischargeOverCurrentProtection = false;
 			
-			boolean highTemp = false;
-			boolean lowTemp = false;
+//			boolean highTemp = false;
+//			boolean lowTemp = false;
 			boolean overTempProtection = false;
 			boolean underTempProtection = false;
 
+			saveTimeStamp = true;
+
+			boolean charging = false;
+			boolean discharging = false;
+			
 			for( int i = 0; i < m_numberOfDevices; i++ )
 			{
 				for( int j = 0; j < m_alarmInfos[i].numberOfCells(); j++ )
 				{
-					highVoltage |= m_alarmInfos[ i ].cellAlarms()[ j ].cellHighVoltage();
-					lowVoltage |= m_alarmInfos[ i ].cellAlarms()[ j ].cellLowVoltage();
-					
-					overVoltageProtection |= m_alarmInfos[ i ].cellAlarms()[ j ].cellOverVoltageProtection();
-					underVoltageProtection |= m_alarmInfos[ i ].cellAlarms()[ j ].cellUnderVoltageProtection();
+					overVoltageProtection |= m_alarmInfos[ i ].cellAlarms()[ j ].isAboveHighLimit();
+					underVoltageProtection |= m_alarmInfos[ i ].cellAlarms()[ j ].isBelowLowLimit();
 				}
 
 				for( int j = 0; j < m_alarmInfos[i].numberOfSensors(); j++ )
 				{
-					highTemp |= m_alarmInfos[ i ].temperatureAlarms()[ j ].highTemperature();
-					lowTemp |= m_alarmInfos[ i ].temperatureAlarms()[ j ].lowTemperature();
-
-					overTempProtection |= m_alarmInfos[ i ].temperatureAlarms()[ j ].overTemperatureProtection();
-					underTempProtection |= m_alarmInfos[ i ].temperatureAlarms()[ j ].underTemperatureProtection();
+					overTempProtection |= m_alarmInfos[ i ].temperatureAlarms()[ j ].isAboveHighLimit();
+					underTempProtection |= m_alarmInfos[ i ].temperatureAlarms()[ j ].isBelowLowLimit();
 				}
 
 				
-				systemOverVoltage |= m_alarmInfos[i].systemVoltageAlarm().systemOverVoltage();
-				systemUnderVoltage |= m_alarmInfos[i].systemVoltageAlarm().systemUnderVoltage();
-				systemOverVoltageProtection |= m_alarmInfos[i].systemVoltageAlarm().overVoltageProtection();
-				systemUnderVoltageProtection |= m_alarmInfos[i].systemVoltageAlarm().underVoltageProtection();
+				systemOverVoltageProtection |= m_alarmInfos[i].systemVoltageAlarm().isAboveHighLimit();
+				systemUnderVoltageProtection |= m_alarmInfos[i].systemVoltageAlarm().isBelowLowLimit();
 				
-				chargeOverCurrent |= m_alarmInfos[ i ].currentAlarm().overCurrent();
-				chargeOverCurrentProtection |= m_alarmInfos[ i ].currentAlarm().overCurrentProtection();
+				chargeOverCurrentProtection |= m_alarmInfos[ i ].currentAlarm().isAboveHighLimit();
 
-				dischargeOverCurrent |= m_alarmInfos[ i ].disChargeCurrentAlarm().overCurrent();
-				dischargeOverCurrentProtection |= m_alarmInfos[ i ].disChargeCurrentAlarm().overCurrentProtection();
+				dischargeOverCurrentProtection |= m_alarmInfos[ i ].disChargeCurrentAlarm().isAboveHighLimit();
+
+				m_statesPerModule.get( PY_USE_BAT_POWER + i ).setNextValue( m_alarmInfos[i].extStatus().usingModulePower() );
+				
+				m_statesPerModule.get( PY_DISCHG_MOSFET + i ).setNextValue( m_alarmInfos[i].extStatus().dischargeMosfetOn() );
+
+				m_statesPerModule.get( PY_CHARGE_MOSFET + i ).setNextValue( m_alarmInfos[i].extStatus().chargeMosfetOn() );
+				
+				charging |= m_alarmInfos[i].extStatus().isCharging();
+				
+				m_statesPerModule.get( PY_CHARGING + i ).setNextValue( m_alarmInfos[i].extStatus().isCharging() );
+
+				discharging |= m_alarmInfos[i].extStatus().isDischarging();
+				
+				m_statesPerModule.get( PY_DIS_CHARGING + i ).setNextValue( m_alarmInfos[i].extStatus().isDischarging() );
+
+				m_statesPerModule.get( PY_FULLY_CHARGED + i ).setNextValue( m_alarmInfos[i].extStatus().isFullyCharged() );
+
+				m_statesPerModule.get( PY_HV_WARNING + i ).setNextValue( m_alarmInfos[i].extStatus().cellOVWarnings() != 0 );
 			}
 			
+			if( charging && discharging )
+			{
+				charging = false;
+			}
+			
+			channel( PylontechUS2000CBattery.ChannelId.SYSTEM_CHARGE_STATUS ).setNextValue( charging );
+			channel( PylontechUS2000CBattery.ChannelId.SYSTEM_DISCHARGE_STATUS ).setNextValue( discharging );
+			channel( PylontechUS2000CBattery.ChannelId.SYSTEM_IDLE_STATUS ).setNextValue( !discharging && !charging );
+			
+			Status basicStatus = Status.UNDEFINED;
+			
+			if( charging )
+			{
+				basicStatus = Status.CHARGE;
+			}
+			else if( discharging )
+			{
+				basicStatus = Status.DISCHARGE;
+			}
+			else
+			{
+				basicStatus = Status.IDLE;
+			}
+			
+			channel( PylontechUS2000CBattery.ChannelId.BASIC_STATUS ).setNextValue( basicStatus );
+			
+
 			channel( PylontechUS2000CBattery.ChannelId.BATTERY_CELL_UNDER_VOLTAGE_PROTECTION ).setNextValue(underVoltageProtection);
 			channel( PylontechUS2000CBattery.ChannelId.BATTERY_CELL_OVER_VOLTAGE_PROTECTION ).setNextValue(overVoltageProtection);
-			channel( PylontechUS2000CBattery.ChannelId.BATTERY_CELL_LOW_VOLTAGE_WARNING ).setNextValue(lowVoltage);
-			channel( PylontechUS2000CBattery.ChannelId.BATTERY_CELL_HIGH_VOLTAGE_WARNING ).setNextValue(highVoltage);
 
-			channel( PylontechUS2000CBattery.ChannelId.SYSTEM_OVER_VOLTAGE ).setNextValue(systemOverVoltage);
-			channel( PylontechUS2000CBattery.ChannelId.SYSTEM_UNDER_VOLTAGE ).setNextValue(systemUnderVoltage);
 			channel( PylontechUS2000CBattery.ChannelId.SYSTEM_OVER_VOLTAGE_PROTECTION ).setNextValue(systemOverVoltageProtection);
 			channel( PylontechUS2000CBattery.ChannelId.SYSTEM_UNDER_VOLTAGE_PROTECTION ).setNextValue(systemUnderVoltageProtection);
 			
-			channel( PylontechUS2000CBattery.ChannelId.CHARGE_OVER_CURRENT_WARNING ).setNextValue(chargeOverCurrent);
 			channel( PylontechUS2000CBattery.ChannelId.CHARGE_OVER_CURRENT_PROTECTION ).setNextValue(chargeOverCurrentProtection);
-			channel( PylontechUS2000CBattery.ChannelId.DISCHARGE_OVER_CURRENT_WARNING ).setNextValue(dischargeOverCurrent);
 			channel( PylontechUS2000CBattery.ChannelId.DISCHARGE_OVER_CURRENT_PROTECTION ).setNextValue(dischargeOverCurrentProtection);
 
-			channel( PylontechUS2000CBattery.ChannelId.MODULE_HIGH_TEMPERATURE_WARNING ).setNextValue(highTemp);
 			channel( PylontechUS2000CBattery.ChannelId.MODULE_OVER_TEMPERATURE_PROTECTION ).setNextValue(overTempProtection);
 			channel( PylontechUS2000CBattery.ChannelId.MODULE_UNDER_TEMPERATURE_PROTECTION ).setNextValue(underTempProtection);
-			channel( PylontechUS2000CBattery.ChannelId.MODULE_LOW_TEMPERATURE_WARNING ).setNextValue(lowTemp);
 		}
 
 		m_worker.startNextCycle();
-	// TODO	m_worker.startNextCycle( )
-		//TODO
 		
+		if( saveTimeStamp && stateMachine.getCurrentState() == State.RUNNING )
+		{
+			m_lastDataReceiveTime = System.currentTimeMillis();
+		}
 		/*
 
 SYSTEM_TEMPERATURE_WARNING
@@ -660,10 +789,6 @@ CHARGE_UNDER_TEMPERATURE_PROTECTION
 CHARGE_OVER_TEMPERATURE_PROTECTION
 DISCHARGE_UNDER_TEMPERATURE_PROTECTION
 DISCHARGE_OVER_TEMPERATURE_PROTECTION
-
-MODULE_OVER_TEMPERATURE_PROTECTION
-MODULE_HIGH_TEMPERATURE_WARNING
-
 		 * 
 		 */
 	}

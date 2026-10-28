@@ -22,33 +22,53 @@ public class PylontechSerialProtocol {
 
 	public static final int CMD_KEY_GET_ANALOG_VALUE = 0x42;
 	public static final int CMD_KEY_GET_ALARM_INFO = 0x44;
+	public static final int CMD_KEY_GET_SYSTEM_PARAMETERS = 0x47;
 	public static final int CMD_KEY_GET_MANUFACTURER_INFO = 0x51;
 	public static final int CMD_KEY_GET_MANAGEMENT_INFO = 0x92;
 	public static final int CMD_KEY_GET_SERIAL_NUMBER = 0x93;
 	
 	public static enum CMD_DESCRIPTORS {
-		CMD_GET_ANALOG_VALUE(CMD_KEY_GET_ANALOG_VALUE,"getAnalogValue"), CMD_GET_ALARM_INFO(CMD_KEY_GET_ALARM_INFO,"getAlarmInfo"), CMD_GET_SYSTEM_PARAMETERS(0x47),
-		CMD_GET_PROTOCOL_VERSION(0x4F), CMD_GET_MANUFACTURER_INFO(CMD_KEY_GET_MANUFACTURER_INFO,"getManufacturerInfo"), CMD_GET_MANAGEMENT_INFO(CMD_KEY_GET_MANAGEMENT_INFO,"getManagementInfo"),
-		CMD_GET_SERIAL_NUMBER(CMD_KEY_GET_SERIAL_NUMBER,"getSerialNumber"), CMD_SET_CHARGE_DISCHARGE_MANAGEMENT(0x94), CMD_TURNOFF(0x95),
-		CMD_GET_FIRMWARE_INFO(0x96), CMD_RETRIEVE_BATT_BASIC_INFO(0x60), CMD_GET_SYSTEM_ANALOG_DATA(0x61),
-		CMD_GET_SYSTEM_ALARM_INFO(0x62), CMD_GET_SYSTEM_CHARGE_DISCHARGE_MANAGEMENT(0x63), CMD_SYSTEM_SHUTDOWN(0x64);
+		CMD_GET_ANALOG_VALUE(CMD_KEY_GET_ANALOG_VALUE,"getAnalogValue"), 
+		CMD_GET_ALARM_INFO(CMD_KEY_GET_ALARM_INFO,"getAlarmInfo"), 
+		CMD_GET_SYSTEM_PARAMETERS(CMD_KEY_GET_SYSTEM_PARAMETERS,"getSystemParameters"),
+		CMD_GET_PROTOCOL_VERSION(0x4F,"getProtocolVersion"), 
+		CMD_GET_MANUFACTURER_INFO(CMD_KEY_GET_MANUFACTURER_INFO,"getManufacturerInfo"), 
+		CMD_GET_MANAGEMENT_INFO(CMD_KEY_GET_MANAGEMENT_INFO,"getManagementInfo"),
+		CMD_GET_SERIAL_NUMBER(CMD_KEY_GET_SERIAL_NUMBER,"getSerialNumber"), 
+		CMD_SET_CHARGE_DISCHARGE_MANAGEMENT(0x94), 
+		CMD_TURNOFF(0x95),
+		CMD_GET_FIRMWARE_INFO(0x96), 
+		CMD_RETRIEVE_BATT_BASIC_INFO(0x60), 
+		CMD_GET_SYSTEM_ANALOG_DATA(0x61),
+		CMD_GET_SYSTEM_ALARM_INFO(0x62), 
+		CMD_GET_SYSTEM_CHARGE_DISCHARGE_MANAGEMENT(0x63), 
+		CMD_SYSTEM_SHUTDOWN(0x64);
 
 		private int cmd;
 
 		private final String queryName;
 		
-		private CMD_DESCRIPTORS(int _cmd) {
+		private boolean parseable;
+		
+		private CMD_DESCRIPTORS(int _cmd ) {
 			cmd = _cmd;
 			queryName = null;
+			parseable = false;
 		}
 
 		private CMD_DESCRIPTORS(int _cmd, String _queryName) {
 			cmd = _cmd;
 			queryName = _queryName;
+			parseable = true;
 		}
 
 		public int getCmd() {
 			return cmd;
+		}
+		
+		public boolean isParseable()
+		{
+			return parseable;
 		}
 		
 		public String getQueryName()
@@ -464,6 +484,13 @@ public class PylontechSerialProtocol {
 			return value;
 		}
 
+		public int readUInt16LsbFirst() {
+			ensure(2);
+			int lo = data[readPos++] & 0xFF;
+			int hi = data[readPos++] & 0xFF;
+			return (hi << 8) | lo;
+		}
+
 		public int readUInt16() {
 			ensure(2);
 			int hi = data[readPos++] & 0xFF;
@@ -536,6 +563,37 @@ public class PylontechSerialProtocol {
 				chargeEnable, dischargeEnable, chargeImmediately1, chargeImmediately2, fullChargeRequest);
 	}
 
+	public record SystemParameters(double cellHighVoltageLimit, double cellLowVoltageLimit, double cellUnderVoltageLimit, 
+			double chargeHighTempLimit, double chargeLowTempLimit, double chargeCurrentLimit, 
+			double moduleHighVoltageLimit, double moduleLowVoltageLimit,
+			double moduleUnderVoltageLimit, double dischargeHighTempLimit, double dischargeLowTempLimit,
+			double dischargeCurrentLimit ) {
+	}
+	
+	public static SystemParameters parseSystemParameters(byte[] info) {
+		ReadCursor c = new ReadCursor(info);
+		@SuppressWarnings("unused")
+		int commandValue = c.readUInt8();
+
+		double cellHighVoltageLimit = divideBy1000(c.readUInt16());
+		double cellLowVoltageLimit = divideBy1000(c.readUInt16());
+		double cellUnderVoltageLimit = divideBy1000(c.readUInt16());
+		double chargeHighTempLimit = toCelsius(c.readInt16());
+		double chargeLowTempLimit = toCelsius(c.readInt16());
+		double chargeCurrentLimit = toAmp(c.readInt16());
+		double moduleHighVoltageLimit = divideBy1000(c.readUInt16());
+		double moduleLowVoltageLimit = divideBy1000(c.readUInt16());
+		double moduleUnderVoltageLimit = divideBy1000(c.readUInt16()); 
+		double dischargeHighTempLimit = toCelsius(c.readInt16());
+		double dischargeLowTempLimit = toCelsius(c.readInt16());
+		double dischargeCurrentLimit = toAmp(c.readInt16());
+
+		return new SystemParameters( cellHighVoltageLimit, cellLowVoltageLimit, cellUnderVoltageLimit, 
+				chargeHighTempLimit, chargeLowTempLimit, chargeCurrentLimit, 
+				moduleHighVoltageLimit, moduleLowVoltageLimit, 
+				moduleUnderVoltageLimit, dischargeHighTempLimit, dischargeLowTempLimit, dischargeCurrentLimit );
+	}
+
 	public static String parseModuleSerialNumber(byte[] info) {
 		ReadCursor c = new ReadCursor(info);
 		@SuppressWarnings("unused")
@@ -545,56 +603,70 @@ public class PylontechSerialProtocol {
 
 	}
 
-	public record CellAlarm(boolean cellLowVoltage, boolean cellHighVoltage, boolean cellUnderVoltageProtection,
-			boolean cellOverVoltageProtection, boolean cellInbalance) {
-
-	}
-
-	private static CellAlarm parseCellAlarm(ReadCursor c) {
+	private static AlarmStatus parseAlarmStatus(ReadCursor c) {
 		int byteValue = c.readUInt8();
 
-		return new CellAlarm(parseBit(byteValue, 0), parseBit(byteValue, 1), parseBit(byteValue, 2),
-				parseBit(byteValue, 3), (byteValue & 0xF0) != 0);
+		return AlarmStatus.ofNumber(byteValue);
 	}
 
-	public record TemperatureAlarm(boolean lowTemperature, boolean highTemperature, boolean underTemperatureProtection,
-			boolean overTemperatureProtection) {
+	public enum AlarmStatus
+	{
+		NO_ERROR(0),
+		BELOW_LOWER_LIMIT(1),
+		ABOVE_HIGHER_LIMIT(2),
+		OTHER_ERROR(0xF0),
+		UNDEFINED(0xFF);
+		
+		int errorCode;
+		
+		AlarmStatus( int _number )
+		{
+			errorCode = _number;
+		}
+		
+		public int getErorCode()
+		{
+			return errorCode;
+		}
+		
+		public static AlarmStatus ofNumber( int number )
+		{
+			switch( number & 0xFF )
+			{
+			case 0: return NO_ERROR;
+			case 1: return BELOW_LOWER_LIMIT;
+			case 2: return ABOVE_HIGHER_LIMIT;
+			case 0xF0: return OTHER_ERROR;
+			default: return UNDEFINED;
+			}
+		}
+		
+		public boolean isAboveHighLimit()
+		{
+			return ( errorCode & 2 ) != 0;
+		}
 
+		public boolean isBelowLowLimit()
+		{
+			return ( errorCode & 1 ) != 0;
+		}
+		
+		public boolean isOtherError()
+		{
+			return ( errorCode & 0xF0 ) != 0;
+		}
 	}
 
-	private static TemperatureAlarm parseTemperatureAlarm(ReadCursor c) {
-
-		int byteValue = c.readUInt8();
-
-		return new TemperatureAlarm(parseBit(byteValue, 0), parseBit(byteValue, 1), parseBit(byteValue, 2),
-				parseBit(byteValue, 3));
+	public record AlarmInfo(int numberOfCells, AlarmStatus[] cellAlarms, int numberOfSensors,
+			AlarmStatus[] temperatureAlarms, AlarmStatus currentAlarm, AlarmStatus systemVoltageAlarm,
+			AlarmStatus disChargeCurrentAlarm, AlarmExtStatus extStatus ) {
 	}
 
-	public record CurrentAlarm(boolean overCurrent, boolean overCurrentProtection) {
-
-	}
-
-	private static CurrentAlarm parseCurrentAlarm(ReadCursor c) {
-		int byteValue = c.readUInt8();
-
-		return new CurrentAlarm(parseBit(byteValue, 0), parseBit(byteValue, 1));
-	}
-
-	public record VoltageAlarm(boolean systemUnderVoltage, boolean systemOverVoltage, boolean underVoltageProtection,
-			boolean overVoltageProtection) {
-
-	}
-
-	private static VoltageAlarm parseVoltageAlarm(ReadCursor c) {
-		int byteValue = c.readUInt8();
-
-		return new VoltageAlarm(parseBit(byteValue, 0), parseBit(byteValue, 1), parseBit(byteValue, 2),
-				parseBit(byteValue, 3));
-	}
-
-	public record AlarmInfo(int numberOfCells, CellAlarm[] cellAlarms, int numberOfSensors,
-			TemperatureAlarm[] temperatureAlarms, CurrentAlarm currentAlarm, VoltageAlarm systemVoltageAlarm,
-			CurrentAlarm disChargeCurrentAlarm) {
+	public record AlarmExtStatus( short status1, boolean usingModulePower, 
+			boolean dischargeMosfetOn, boolean chargeMosfetOn, 
+			boolean isCharging, boolean isDischarging, 
+			boolean isFullyCharged, 
+			short cellOVWarnings ) {
 	}
 
 	public static AlarmInfo parseAlarm(byte[] info, int address ) {
@@ -605,72 +677,44 @@ public class PylontechSerialProtocol {
 		int commandValue = c.readUInt8();
 		int numberOfCells = c.readUInt8();
 
-		CellAlarm[] cellAlarms = new CellAlarm[numberOfCells];
+		AlarmStatus[] cellAlarms = new AlarmStatus[numberOfCells];
 
 		for (int i = 0; i < numberOfCells; i++) {
-			cellAlarms[i] = parseCellAlarm(c);
+			cellAlarms[i] = parseAlarmStatus(c);
 		}
 
 		int numberOfSensors = c.readUInt8();
 
-		TemperatureAlarm[] temperatureAlarms = new TemperatureAlarm[numberOfSensors];
+		AlarmStatus[] temperatureAlarms = new AlarmStatus[numberOfSensors];
 
 		for (int i = 0; i < numberOfSensors; i++) {
-			temperatureAlarms[i] = parseTemperatureAlarm(c);
+			temperatureAlarms[i] = parseAlarmStatus(c);
 		}
 
-		CurrentAlarm chargeCurrentAlarm = parseCurrentAlarm(c);
-		VoltageAlarm systemVoltageAlarm = parseVoltageAlarm(c);
-		CurrentAlarm disChargeCurrentAlarm = parseCurrentAlarm(c);
+		AlarmStatus chargeCurrentAlarm = parseAlarmStatus(c);
+		AlarmStatus systemVoltageAlarm = parseAlarmStatus(c);
+		AlarmStatus disChargeCurrentAlarm = parseAlarmStatus(c);
 
-		byte[] restBytes = c.readBytes(c.remaining() );
-
-		StringBuffer buf = new StringBuffer();
+		short status1 = ( short )c.readUInt8();
 		
-		for( int i = 0; i < restBytes.length; i++ )
-		{
-			if( restBytes[ i ] != 0 )
-			{
-				buf.append( "ST%d: %02X;".formatted( ( i + 1 ), restBytes[i] ) );
-			}
-		}
+		int status2 = c.readUInt8();
+
+		boolean usingModulePower = parseBit( status2, 3 );
+		boolean dischargeMosfetOn = parseBit( status2, 2 );
+		boolean chargeMosfetOn = parseBit( status2, 1 );
 		
-		if( buf.length() > 0 )
-		{
-		  LOGGER.info( "Bat%d: ".formatted(address) + buf.toString() );
-		}
-		// Status 1:
-		// 7: module under voltage
-		// 6: charge over temperature
-		// 5: discharge over temperature
-		// 4: discharge over current
-		// 2: charge over current
-		// 1: cell under voltage
-		// 0: module over voltage
-
-		// Status 2:
-		// 3: using battery module power
-		// 2: discharge mosfet 1 on 0 off
-		// 1: charge mosfet 1: on 0 off
-
-		// Status 3:
-		// 7: effective charge current > 0.1A
-		// 6: effective discharge current < -0.1 A
-		// 3: fully charged 1 = full
-		// 0: buzzer 1 on 0 off
-
-		// Status 4:
-		// 7 cell voltage 8 1: error, 0 : normal
-		// ....
-		// 0 cell voltage 1 1: error, 0 : normal
-
-		// Status 5:
-		// 7 cell voltage 16 1: error, 0 : normal
-		// ....
-		// 0 cell voltage 9 1: error, 0 : normal
+		int status3 = c.readUInt8();
+		
+		boolean isCharging = parseBit( status3, 7 );
+		boolean isDischarging = parseBit( status3, 6 );
+		boolean isFullyCharged = parseBit( status3, 3 );
+		
+		short status_4_5 = ( short )c.readUInt16LsbFirst();
+		
+		AlarmExtStatus extStatus = new AlarmExtStatus(status1, usingModulePower, dischargeMosfetOn, chargeMosfetOn, isCharging, isDischarging, isFullyCharged, status_4_5 );
 
 		return new AlarmInfo(numberOfCells, cellAlarms, numberOfSensors, temperatureAlarms, chargeCurrentAlarm,
-				systemVoltageAlarm, disChargeCurrentAlarm);
+				systemVoltageAlarm, disChargeCurrentAlarm, extStatus );
 	}
 
 	public record ModuleValues(int numberOfCells, double[] cellVoltages, int numberOfTemperatures,
