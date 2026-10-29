@@ -5,6 +5,7 @@ import static io.openems.edge.common.event.EdgeEventConstants.TOPIC_CYCLE_BEFORE
 import static org.osgi.service.component.annotations.ConfigurationPolicy.REQUIRE;
 
 import java.util.HashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.osgi.service.cm.ConfigurationAdmin;
@@ -21,6 +22,8 @@ import org.osgi.service.event.propertytypes.EventTopics;
 import org.osgi.service.metatype.annotations.Designate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import com.google.common.util.concurrent.AtomicDouble;
 
 import io.openems.common.exceptions.OpenemsError.OpenemsNamedException;
 import io.openems.common.channel.AccessMode;
@@ -47,6 +50,7 @@ import io.openems.edge.common.channel.internal.AbstractDoc;
 import io.openems.edge.common.component.AbstractOpenemsComponent;
 import io.openems.edge.common.component.ComponentManager;
 import io.openems.edge.common.component.OpenemsComponent;
+import io.openems.edge.common.linecharacteristic.PolyLine;
 import io.openems.edge.common.startstop.StartStop;
 import io.openems.edge.common.startstop.StartStoppable;
 
@@ -66,7 +70,8 @@ import io.openems.edge.common.startstop.StartStoppable;
 		TOPIC_CYCLE_AFTER_PROCESS_IMAGE })
 public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implements 
 		OpenemsComponent, Battery, EventHandler, StartStoppable, PylontechUS2000CBattery {
-
+	public static final int NOMINAL_CURRENT_PER_MODULE_A = 25;
+	
 	private static final String PY_HV_WARNING = "PY_HV_WARNING";
 
 	private static final String PY_FULLY_CHARGED = "PY_FULLY_CHARGED";
@@ -148,9 +153,11 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 	
 	private final PylontechUS2000CBatteryProtectionDefinition protectionDef = new PylontechUS2000CBatteryProtectionDefinition( 0, 0, 0 );
 
-	private double[] m_minCellVoltageOfModule = new double[ PY_MAX_DEVICES ];
+	private AtomicInteger m_chargePowerLimitByMaxCellVoltage = new AtomicInteger( Integer.MAX_VALUE );
+	
+	private AtomicInteger m_dischargePowerLimitByMinCellVoltage = new AtomicInteger( Integer.MAX_VALUE );
 
-	private double[] m_maxCellVoltageOfModule  = new double[ PY_MAX_DEVICES ];
+	private Channel<Integer> m_numberOfDevicesChannel;
 
 	@Activate
 	void activate(ComponentContext context, Config config) throws OpenemsException {
@@ -167,10 +174,10 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 						this.componentManager) //
 				.build();
 		
-		Channel<Integer> numberOfDevicesChannel = this
+		m_numberOfDevicesChannel = this
 				.channel(PylontechUS2000CBattery.ChannelId.SYSTEM_NUMBER_OF_PARALLEL_DEVICES);
 
-		numberOfDevicesChannel.setNextValue( m_numberOfDevices );
+		m_numberOfDevicesChannel.setNextValue( m_numberOfDevices );
 	}
 
 	
@@ -317,9 +324,11 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 		if( m_worker.getDeviceCount() != m_numberOfDevices )
 		{
 			m_numberOfDevices = m_worker.getDeviceCount();
-			
-			int _initBmsMaxEverCharge = m_numberOfDevices * 25;
-			int _initBmsMaxEverDischarge = m_numberOfDevices * 25;
+
+			m_numberOfDevicesChannel.setNextValue( m_numberOfDevices );
+
+			int _initBmsMaxEverCharge = m_numberOfDevices * NOMINAL_CURRENT_PER_MODULE_A;
+			int _initBmsMaxEverDischarge = m_numberOfDevices * NOMINAL_CURRENT_PER_MODULE_A;
 			int _maxIncreasePerSecond = m_numberOfDevices * 5;
 			
 			protectionDef.setInitialBmsMaxEverChargeCurrent(_initBmsMaxEverCharge);
@@ -342,6 +351,8 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 					name = PY_CURRENT + i;
 					
 					currentChannel = ( IntegerReadChannel )addChannelImpl( name, m_currentDoc );
+					
+					m_currentChannels.put(i, currentChannel);
 				}
 				
 				name = PY_USE_BAT_POWER + i;
@@ -513,6 +524,10 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 
 			saveTimeStamp = true;
 			
+			int moduleChargePowerLimit = 0;
+			
+			int moduleDischargePowerLimit = 0;
+			
 			for( int i = 0; i < m_numberOfDevices; i++ )
 			{
 				double moduleStateOfCharge = m_moduleValues[ i ].stateOfCharge();
@@ -552,9 +567,14 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 				minCellTemperature = Math.min( minCellTemperature , m_moduleValues[ i ].averageBmsTemperature() );
 				maxCellTemperature = Math.max( maxCellTemperature , m_moduleValues[ i ].averageBmsTemperature() );
 				
-				m_minCellVoltageOfModule[ i ] = minCellVoltageOfModule;
-				m_maxCellVoltageOfModule[ i ] = maxCellVoltageOfModule;
+				moduleChargePowerLimit += getDischargeCellVoltageToPercent().getValue( minCellVoltageOfModule * 1000 ) * NOMINAL_CURRENT_PER_MODULE_A * m_moduleValues[ i ].voltage();
+				
+				moduleDischargePowerLimit += getChargeCellVoltageToPercent().getValue( maxCellVoltageOfModule * 1000 ) * NOMINAL_CURRENT_PER_MODULE_A * m_moduleValues[ i ].voltage();
 			}
+			
+			m_chargePowerLimitByMaxCellVoltage.set(moduleChargePowerLimit);
+			
+			m_dischargePowerLimitByMinCellVoltage.set(moduleDischargePowerLimit);
 			
 			if( m_numberOfDevices > 0 )
 			{
@@ -586,8 +606,6 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 			channel( Battery.ChannelId.MIN_CELL_VOLTAGE ).setNextValue( ( int )( minCellVoltage * 1000.0 ) );
 
 			channel( Battery.ChannelId.MAX_CELL_VOLTAGE ).setNextValue( (int )( maxCellVoltage * 1000.0 ) ); 
-			
-			m_worker.startNextCycle();
 		}
 		
 		if( newManagementInfo && infoAvailable( m_managementInfos ) )
@@ -606,23 +624,12 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 			
 			for( int i = 0; i < m_numberOfDevices; i++ )
 			{
-				double moduleChargeLimit = m_managementInfos[ i ].chargeCurrentLimit(); // positive value
+				chargeCurrent += m_managementInfos[ i ].chargeCurrentLimit(); // positive value
 				
-				double moduleDischargeLimit = m_managementInfos[ i ].dischargeCurrentLimit(); // negative value
-				
-				double dischargeCalculatedLimit = protectionDef.getDischargeTemperatureToPercent().getValue( m_minCellVoltageOfModule[ i ] ) * ( -25 );
-				
-				double chargeCalculatedLimit = protectionDef.getDischargeTemperatureToPercent().getValue( m_minCellVoltageOfModule[ i ] ) * 25;
-				
-				double resultingChargeLimit = Double.min(moduleChargeLimit, chargeCalculatedLimit);
-				
-				double resultingDishargeLimit = Double.min(moduleDischargeLimit, dischargeCalculatedLimit);
+				dischargeCurrent -= m_managementInfos[ i ].dischargeCurrentLimit(); // dischargeCurrentLimit() is a negative value, result dischargeCurrent is positive
 
-				chargeCurrent += resultingChargeLimit; // positive value
-				
-				dischargeCurrent -= resultingDishargeLimit;
-				
 				chargeVoltage = Double.min( m_managementInfos[ i ].chargeVoltageLimit(), chargeVoltage );
+				
 				dischargeVoltage = Double.max( m_managementInfos[ i ].dischargeVoltageLimit(), dischargeVoltage );
 
 				chargeEnable |= m_managementInfos[ i ].chargeEnable();
@@ -662,6 +669,7 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 
 			getMinDischargVoltagetChannel().setNextValue( ( int )( dischargeVoltage * 10 ) );
 			getMaxDischargeCurrentChannel().setNextValue( ( int )( dischargeCurrent * 10 ) ); 
+
 		}
 
 		if( newAlarmInfo && infoAvailable( m_alarmInfos ) )
@@ -840,5 +848,38 @@ DISCHARGE_OVER_TEMPERATURE_PROTECTION
 		return m_numberOfDevices;
 	}
 	
+	private PolyLine getChargeCellVoltageToPercent()
+	{
+		return PolyLine.create() //
+		.addPoint(2000, 0.1) //
+		.addPoint(3000, 0.2) //
+		.addPoint(Math.nextUp(3000), 1) //
+		.addPoint(3300, 1) //
+		.addPoint(3450, 0.1) //
+		.addPoint(3540, 0.01) //
+		.addPoint(3580, 0) //
+		.build();
+	}
+
+	private PolyLine getDischargeCellVoltageToPercent() {
+		return PolyLine.create() //
+				.addPoint(2000, 0) //
+				.addPoint(3000, 0) //
+				.addPoint(3100, 0.1) //
+				.addPoint(3200, 0.2) //
+				.addPoint(3300, 1) //
+				.build();
+	}
+
+	@Override
+	public int getChargePowerLimitByMaxCellVoltage()
+	{
+		return m_chargePowerLimitByMaxCellVoltage.get();
+	}
 	
+	@Override
+	public int getDischargePowerLimitByMinCellVoltage()
+	{
+		return m_dischargePowerLimitByMinCellVoltage.get();
+	}
 }

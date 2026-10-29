@@ -41,26 +41,12 @@ public class PylontechUS2000CBatteryProtectionDefinition implements BatteryProte
 
 	@Override
 	public PolyLine getChargeVoltageToPercent() {
-			return PolyLine.create() //
-					.addPoint(2000, 0.1) //
-					.addPoint(3000, 0.2) //
-					.addPoint(Math.nextUp(3000), 1) //
-					.addPoint(3300, 1) //
-					.addPoint(3450, 0.1) //
-					.addPoint(3540, 0.01) //
-					.addPoint(3580, 0) //
-					.build();
+		return PolyLine.empty();
 	}
 
 	@Override
 	public PolyLine getDischargeVoltageToPercent() {
-		return PolyLine.create() //
-				.addPoint(2000, 0) //
-				.addPoint(3000, 0) //
-				.addPoint(3100, 0.1) //
-				.addPoint(3200, 0.2) //
-				.addPoint(3300, 1) //
-				.build();
+		return PolyLine.empty();
 	}
 
 	@Override

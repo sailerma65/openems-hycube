@@ -352,4 +352,8 @@ public interface PylontechUS2000CBattery extends Battery, OpenemsComponent, Star
 	public String getRawInfo( int cmd, int addr );
 
 	public int getParallelDevices();
+	
+	public int getChargePowerLimitByMaxCellVoltage();
+	
+	public int getDischargePowerLimitByMinCellVoltage();
 }

@@ -108,7 +108,7 @@
         <!--Excess Power settings-->
         @if (formGroup.value.chargeMode === "MIX_POWER") {
           <oe-modal-line [name]="'Min. Überschuss'" [formGroup]="formGroup" [component]="controller" [value]="formGroup.value['minExcessPower']" [converter]="Utils.CONVERT_TO_WATT"></oe-modal-line>
-          <oe-modal-line [formGroup]="formGroup" controlName="minExcessPower" [control]="{ type: 'RANGE', properties: { tickMin: minChargePower * 0.5, tickMax: minChargePower, unit: 'W', step: 100, pinFormatter: WATT_PIN_FORMATTER } }" leftColumnWidth="30"></oe-modal-line>
+          <oe-modal-line [formGroup]="formGroup" controlName="minExcessPower" [control]="{ type: 'RANGE', properties: { tickMin: minChargePower * 0.3, tickMax: minChargePower, unit: 'W', step: 100, pinFormatter: WATT_PIN_FORMATTER } }" leftColumnWidth="30"></oe-modal-line>
         }
 
         @if (formGroup.value.chargeMode === "MIX_POWER" || formGroup.value.chargeMode === "FORCE_CHARGE") {
