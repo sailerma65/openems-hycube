@@ -524,10 +524,6 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 
 			saveTimeStamp = true;
 			
-			int moduleChargePowerLimit = 0;
-			
-			int moduleDischargePowerLimit = 0;
-			
 			for( int i = 0; i < m_numberOfDevices; i++ )
 			{
 				double moduleStateOfCharge = m_moduleValues[ i ].stateOfCharge();
@@ -538,9 +534,6 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 				double moduleCurrent =  m_moduleValues[ i ].current();
 				current = current + moduleCurrent;
 			
-				double minCellVoltageOfModule = Double.MAX_VALUE;
-				double maxCellVoltageOfModule = Double.MIN_VALUE;
-				
 				IntegerReadChannel currentChannel = m_currentChannels.get(i);
 				
 				if( currentChannel != null )
@@ -553,9 +546,6 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 				{
 					minCellVoltage = Math.min( minCellVoltage, m_moduleValues[i].cellVoltages()[j]);
 					maxCellVoltage = Math.max( maxCellVoltage, m_moduleValues[i].cellVoltages()[j]);
-					
-					minCellVoltageOfModule = Math.min( minCellVoltageOfModule, m_moduleValues[i].cellVoltages()[j]);
-					maxCellVoltageOfModule = Math.max( maxCellVoltageOfModule, m_moduleValues[i].cellVoltages()[j]);
 				}
 
 				for( int j = 0; j < m_moduleValues[i].numberOfTemperatures() - 1 ; j++ )
@@ -566,15 +556,32 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 				
 				minCellTemperature = Math.min( minCellTemperature , m_moduleValues[ i ].averageBmsTemperature() );
 				maxCellTemperature = Math.max( maxCellTemperature , m_moduleValues[ i ].averageBmsTemperature() );
-				
-				moduleChargePowerLimit += getDischargeCellVoltageToPercent().getValue( minCellVoltageOfModule * 1000 ) * NOMINAL_CURRENT_PER_MODULE_A * m_moduleValues[ i ].voltage();
-				
-				moduleDischargePowerLimit += getChargeCellVoltageToPercent().getValue( maxCellVoltageOfModule * 1000 ) * NOMINAL_CURRENT_PER_MODULE_A * m_moduleValues[ i ].voltage();
+			}
+
+			double chargePercent = getChargeCellVoltageToPercent().getValue( maxCellVoltage * 1000 );
+			
+			double dischargePercent = getDischargeCellVoltageToPercent().getValue( minCellVoltage * 1000 );
+			
+			int chargePowerLimit = 0;
+			
+			int dischargePowerLimit = 0;
+			
+			for( int i = 0; i < m_numberOfDevices; i++ )
+			{
+				if( m_alarmInfos[ i ] != null && m_alarmInfos[ i ].extStatus().chargeMosfetOn() )
+				{
+					chargePowerLimit += chargePercent * NOMINAL_CURRENT_PER_MODULE_A * m_moduleValues[ i ].voltage();
+				}
+
+				if( m_alarmInfos[ i ] != null && m_alarmInfos[ i ].extStatus().dischargeMosfetOn() )
+				{
+					dischargePowerLimit += dischargePercent * NOMINAL_CURRENT_PER_MODULE_A * m_moduleValues[ i ].voltage();
+				}
 			}
 			
-			m_chargePowerLimitByMaxCellVoltage.set(moduleChargePowerLimit);
+			m_chargePowerLimitByMaxCellVoltage.set( chargePowerLimit <= 100 ? 100 : chargePowerLimit );
 			
-			m_dischargePowerLimitByMinCellVoltage.set(moduleDischargePowerLimit);
+			m_dischargePowerLimitByMinCellVoltage.set(dischargePowerLimit <= 100 ? 100 : dischargePowerLimit );
 			
 			if( m_numberOfDevices > 0 )
 			{
@@ -727,15 +734,15 @@ public class PylontechUS2000CBatteryImpl extends AbstractOpenemsComponent implem
 
 				m_statesPerModule.get( PY_CHARGE_MOSFET + i ).setNextValue( m_alarmInfos[i].extStatus().chargeMosfetOn() );
 				
-				charging |= m_alarmInfos[i].extStatus().isCharging();
+				charging |= m_alarmInfos[i].isCharging();
 				
-				m_statesPerModule.get( PY_CHARGING + i ).setNextValue( m_alarmInfos[i].extStatus().isCharging() );
+				m_statesPerModule.get( PY_CHARGING + i ).setNextValue( m_alarmInfos[i].isCharging() );
 
-				discharging |= m_alarmInfos[i].extStatus().isDischarging();
+				discharging |= m_alarmInfos[i].isDischarging();
 				
-				m_statesPerModule.get( PY_DIS_CHARGING + i ).setNextValue( m_alarmInfos[i].extStatus().isDischarging() );
+				m_statesPerModule.get( PY_DIS_CHARGING + i ).setNextValue( m_alarmInfos[i].isDischarging() );
 
-				m_statesPerModule.get( PY_FULLY_CHARGED + i ).setNextValue( m_alarmInfos[i].extStatus().isFullyCharged() );
+				m_statesPerModule.get( PY_FULLY_CHARGED + i ).setNextValue( m_alarmInfos[i].isFullyCharged() );
 
 				m_statesPerModule.get( PY_HV_WARNING + i ).setNextValue( m_alarmInfos[i].extStatus().cellOVWarnings() != 0 );
 			}

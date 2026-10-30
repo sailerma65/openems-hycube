@@ -615,6 +615,7 @@ public class PylontechSerialProtocol {
 		BELOW_LOWER_LIMIT(1),
 		ABOVE_HIGHER_LIMIT(2),
 		OTHER_ERROR(0xF0),
+		MULTIPLE_ERROS(0xFE),
 		UNDEFINED(0xFF);
 		
 		int errorCode;
@@ -637,6 +638,7 @@ public class PylontechSerialProtocol {
 			case 1: return BELOW_LOWER_LIMIT;
 			case 2: return ABOVE_HIGHER_LIMIT;
 			case 0xF0: return OTHER_ERROR;
+			case 0xFE: return MULTIPLE_ERROS;
 			default: return UNDEFINED;
 			}
 		}
@@ -657,15 +659,14 @@ public class PylontechSerialProtocol {
 		}
 	}
 
-	public record AlarmInfo(int numberOfCells, AlarmStatus[] cellAlarms, int numberOfSensors,
-			AlarmStatus[] temperatureAlarms, AlarmStatus currentAlarm, AlarmStatus systemVoltageAlarm,
-			AlarmStatus disChargeCurrentAlarm, AlarmExtStatus extStatus ) {
+	public record AlarmInfo( AlarmStatus sumCellAlarm, AlarmStatus currentAlarm, AlarmStatus systemVoltageAlarm,
+			AlarmStatus disChargeCurrentAlarm, boolean isCharging, boolean isDischarging,  boolean isFullyCharged, 
+			AlarmExtStatus extStatus, int numberOfCells, AlarmStatus[] cellAlarms, int numberOfSensors,
+			AlarmStatus[] temperatureAlarms ) {
 	}
 
 	public record AlarmExtStatus( short status1, boolean usingModulePower, 
 			boolean dischargeMosfetOn, boolean chargeMosfetOn, 
-			boolean isCharging, boolean isDischarging, 
-			boolean isFullyCharged, 
 			short cellOVWarnings ) {
 	}
 
@@ -679,8 +680,25 @@ public class PylontechSerialProtocol {
 
 		AlarmStatus[] cellAlarms = new AlarmStatus[numberOfCells];
 
+		AlarmStatus sumCellAlarm = AlarmStatus.NO_ERROR;
+		
 		for (int i = 0; i < numberOfCells; i++) {
-			cellAlarms[i] = parseAlarmStatus(c);
+			AlarmStatus cellAlarm = parseAlarmStatus( c );
+			
+			cellAlarms[i] = cellAlarm;
+			
+			switch( cellAlarm )
+			{
+			case NO_ERROR: break;
+			case ABOVE_HIGHER_LIMIT:
+				sumCellAlarm = ( sumCellAlarm == AlarmStatus.NO_ERROR || sumCellAlarm == AlarmStatus.ABOVE_HIGHER_LIMIT ) ? AlarmStatus.ABOVE_HIGHER_LIMIT : AlarmStatus.MULTIPLE_ERROS; break;
+			case BELOW_LOWER_LIMIT:
+				sumCellAlarm = ( sumCellAlarm == AlarmStatus.NO_ERROR || sumCellAlarm == AlarmStatus.BELOW_LOWER_LIMIT ) ? AlarmStatus.BELOW_LOWER_LIMIT : AlarmStatus.MULTIPLE_ERROS; break;
+			case OTHER_ERROR:
+				sumCellAlarm = ( sumCellAlarm == AlarmStatus.NO_ERROR || sumCellAlarm == AlarmStatus.OTHER_ERROR ) ? AlarmStatus.OTHER_ERROR : AlarmStatus.MULTIPLE_ERROS; break;
+			default:
+				sumCellAlarm = AlarmStatus.UNDEFINED;
+			}
 		}
 
 		int numberOfSensors = c.readUInt8();
@@ -711,15 +729,15 @@ public class PylontechSerialProtocol {
 		
 		short status_4_5 = ( short )c.readUInt16LsbFirst();
 		
-		AlarmExtStatus extStatus = new AlarmExtStatus(status1, usingModulePower, dischargeMosfetOn, chargeMosfetOn, isCharging, isDischarging, isFullyCharged, status_4_5 );
+		AlarmExtStatus extStatus = new AlarmExtStatus(status1, usingModulePower, dischargeMosfetOn, chargeMosfetOn, status_4_5 );
 
-		return new AlarmInfo(numberOfCells, cellAlarms, numberOfSensors, temperatureAlarms, chargeCurrentAlarm,
-				systemVoltageAlarm, disChargeCurrentAlarm, extStatus );
+		return new AlarmInfo( sumCellAlarm, chargeCurrentAlarm,
+				systemVoltageAlarm, disChargeCurrentAlarm, isCharging, isDischarging, isFullyCharged, extStatus, numberOfCells, cellAlarms, numberOfSensors, temperatureAlarms );
 	}
 
-	public record ModuleValues(int numberOfCells, double[] cellVoltages, int numberOfTemperatures,
-			double averageBmsTemperature, double[] groupedCellsTemperatures, double current, double voltage,
-			double power, double remainingCapacity, double totalCapacity, double stateOfCharge, int cycleNumber) {
+	public record ModuleValues( double current, double voltage,
+			double power, double remainingCapacity, double totalCapacity, double stateOfCharge, int cycleNumber, int numberOfCells, double[] cellVoltages, int numberOfTemperatures,
+			double averageBmsTemperature, double[] groupedCellsTemperatures ) {
 	}
 
 	private static ModuleValues parseModuleValues(ReadCursor c) {
@@ -760,9 +778,9 @@ public class PylontechSerialProtocol {
 		}
 		double stateOfCharge = remainingCapacity / totalCapacity;
 
-		return new ModuleValues(numberOfCells, cellVoltages, numberOfTemperatures, averageBmsTemperature,
-				groupedCellsTemperatures, current, voltage, power, remainingCapacity, totalCapacity, stateOfCharge,
-				cycleNumber);
+		return new ModuleValues(current, voltage, power, remainingCapacity, totalCapacity, stateOfCharge,
+				cycleNumber, numberOfCells, cellVoltages, numberOfTemperatures, averageBmsTemperature,
+				groupedCellsTemperatures  );
 	}
 
 	public static ModuleValues parseValuesSingle(byte[] info) {
