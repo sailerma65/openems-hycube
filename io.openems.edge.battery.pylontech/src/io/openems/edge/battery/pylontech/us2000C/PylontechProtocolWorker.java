@@ -32,6 +32,8 @@ import io.openems.edge.battery.pylontech.us2000C.com.PylontechSerialProtocol.Sys
 
 class PylontechProtocolWorker extends AbstractWorker{
 
+	private static final long REPOLL_TIME = 30*60000l;
+
 	private static final CMD_DESCRIPTORS[] polledCommands = new CMD_DESCRIPTORS[] { CMD_DESCRIPTORS.CMD_GET_SERIAL_NUMBER, CMD_DESCRIPTORS.CMD_GET_MANUFACTURER_INFO,
 			CMD_DESCRIPTORS.CMD_GET_ANALOG_VALUE, CMD_DESCRIPTORS.CMD_GET_MANAGEMENT_INFO, CMD_DESCRIPTORS.CMD_GET_ALARM_INFO };
 	
@@ -196,6 +198,8 @@ class PylontechProtocolWorker extends AbstractWorker{
 	private int deviceCheckCycle = 0;
 	
 	private int[] deviceCheckResults = new int[ PY_MAX_DEVICE_CHECK_CYCLES ];
+	
+	private long lastDeviceLookup = 0;
 	
 	// single thr.
 	private PYLONTECH_COMM_DIR commDirection;
@@ -385,6 +389,17 @@ class PylontechProtocolWorker extends AbstractWorker{
 						{
 						case SCAN_SERIAL_NUMBER:
 							nextPollCycle = PYLONTECH_POLL_CYCLE.SCAN_MANUFACTURER_INFO;
+							
+							if( commState == PYLONTECH_COMM_STATE.RUNNING && pollAddress == pollMax )
+							{
+								// device with address pollMax answered -> need to start initial polling
+
+								log.info( "Device lookup cycle: device %d responded. Starting initial polling...".formatted(pollMax));
+								
+								startCommunication();
+								
+								return;
+							}
 							break;
 						case SCAN_MANUFACTURER_INFO: 
 					        if( commState == PYLONTECH_COMM_STATE.INITIALIZING )
@@ -444,13 +459,28 @@ class PylontechProtocolWorker extends AbstractWorker{
 	
 							if( pollAddress >= pollMax )
 							{
-								pollAddress = PylontechUS2000CBatteryImpl.PY_START_ADDRESS;
-								nextPollCycle = PYLONTECH_POLL_CYCLE.INACTIVE;
+								if( commState == PYLONTECH_COMM_STATE.RUNNING && System.currentTimeMillis() - lastDeviceLookup > REPOLL_TIME )
+								{
+									// try to poll the next device
+								    nextPollCycle = PYLONTECH_POLL_CYCLE.SCAN_SERIAL_NUMBER;
+								    
+								    log.info( "Start device lookup cycle at address %d...".formatted(pollMax));
+								    
+								    lastDeviceLookup = System.currentTimeMillis();
+								    
+								    pollAddress = pollMax; 
+									
+								}
+								else
+								{
+								    pollAddress = PylontechUS2000CBatteryImpl.PY_START_ADDRESS;
+								    nextPollCycle = PYLONTECH_POLL_CYCLE.INACTIVE;
 								
-								//m_valueCycles = PY_VALUE_CYCLES;
-								pollErrorCount = 0;
+								    //m_valueCycles = PY_VALUE_CYCLES;
+								    pollErrorCount = 0;
 								
-								commState = PYLONTECH_COMM_STATE.RUNNING;
+								    commState = PYLONTECH_COMM_STATE.RUNNING;
+								}
 							}
 					        break;
 						case INACTIVE:
@@ -495,6 +525,14 @@ class PylontechProtocolWorker extends AbstractWorker{
 						
 						nextPollCycle = checkErrorCount( nextPollCycle, currentPollCycle, fex );						
 					}
+				}
+				else if( commState == PYLONTECH_COMM_STATE.RUNNING && pollAddress == pollMax )
+				{
+				    log.info( "Device lookup cycle: no answer from device %d. Continue normal polling".formatted(pollMax));
+				    
+					// did not get response from device [pollMax]
+	        		nextPollCycle = PYLONTECH_POLL_CYCLE.SCAN_SERIAL_NUMBER;
+	        		pollAddress = PylontechUS2000CBatteryImpl.PY_START_ADDRESS;
 				}
 				commDirection = PYLONTECH_COMM_DIR.REQUEST;
 			}

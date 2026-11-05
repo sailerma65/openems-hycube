@@ -23,7 +23,7 @@ public class InitBeforeSwitchOn extends StateHandler<State, Context> {
 	
 	private boolean switchedOff = false;
 	
-	private static final int WAIT_TIME = 10;
+	private static final int WAIT_TIME = 5;
 	
 	private HycubeEssImpl ess;
 	

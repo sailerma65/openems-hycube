@@ -20,7 +20,7 @@ public class SwitchBatteryConnection extends StateHandler<State, Context> {
 
 	private Instant entryAt = Instant.MIN;
 	
-	private static final int WAIT_TIME = 10;
+	private static final int WAIT_TIME = 5;
 	
 	private enum Steps
 	{

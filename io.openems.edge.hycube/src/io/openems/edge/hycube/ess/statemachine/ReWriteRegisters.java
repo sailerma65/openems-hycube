@@ -27,7 +27,7 @@ public class ReWriteRegisters extends StateHandler<State, Context> {
 	
 	private boolean dspVersionChecked = false;
 	
-	private static final int WAIT_TIME = 10;
+	private static final int WAIT_TIME = 5;
 	
 	@Override
 	protected void onEntry(Context context) throws OpenemsNamedException {

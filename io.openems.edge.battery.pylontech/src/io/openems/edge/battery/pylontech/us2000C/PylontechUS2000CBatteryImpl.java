@@ -862,7 +862,9 @@ DISCHARGE_OVER_TEMPERATURE_PROTECTION
 		.addPoint(3000, 0.2) //
 		.addPoint(Math.nextUp(3000), 1) //
 		.addPoint(3300, 1) //
-		.addPoint(3450, 0.1) //
+		.addPoint(3400, 1) //
+		.addPoint(3450, 0.5) //
+		.addPoint(3500, 0.1) //
 		.addPoint(3540, 0.01) //
 		.addPoint(3580, 0) //
 		.build();
@@ -874,7 +876,8 @@ DISCHARGE_OVER_TEMPERATURE_PROTECTION
 				.addPoint(3000, 0) //
 				.addPoint(3100, 0.1) //
 				.addPoint(3200, 0.2) //
-				.addPoint(3300, 1) //
+				.addPoint(3220, 1.0) //
+				.addPoint(3300, 1.0) //
 				.build();
 	}
 

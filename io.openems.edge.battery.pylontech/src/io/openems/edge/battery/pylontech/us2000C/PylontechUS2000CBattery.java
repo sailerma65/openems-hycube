@@ -30,6 +30,7 @@ public interface PylontechUS2000CBattery extends Battery, OpenemsComponent, Star
 		SYSTEM_NUMBER_OF_PARALLEL_DEVICES(Doc.of(INTEGER) //
 				.unit(NONE) //
 				.accessMode(READ_ONLY) //
+				.persistencePriority(PersistencePriority.HIGH)
 				.text("Number of parallel devices in system")),
 
 		/*
@@ -48,21 +49,6 @@ public interface PylontechUS2000CBattery extends Battery, OpenemsComponent, Star
 				.accessMode(READ_ONLY)
 				.persistencePriority(PersistencePriority.HIGH)
 				.text("System status. 00=Sleep, 01=Charge, 02=Discharge")),
-		SYSTEM_ERROR_PROTECTION(Doc.of(Level.FAULT) //
-				.accessMode(READ_ONLY) //
-				.text("System error protection (0: Normal, 1: Protect)")),
-		SYSTEM_CURRENT_PROTECTION(Doc.of(Level.FAULT) //
-				.accessMode(READ_ONLY) //
-				.text("Current Protection active")),
-		SYSTEM_TEMPERATURE_PROTECTION(Doc.of(Level.FAULT) //
-				.accessMode(READ_ONLY) //
-				.text("Temperature Protection Active")),
-		SYSTEM_CURRENT_WARNING(Doc.of(Level.WARNING) //
-				.accessMode(READ_ONLY) //
-				.text("Current Warning")),
-		SYSTEM_TEMPERATURE_WARNING(Doc.of(Level.WARNING) //
-				.accessMode(READ_ONLY) //
-				.text("Temperature Warning")),
 		SYSTEM_IDLE_STATUS(Doc.of(BOOLEAN) //
 				.accessMode(READ_ONLY) //
 				.text("System idle status")),
@@ -72,9 +58,6 @@ public interface PylontechUS2000CBattery extends Battery, OpenemsComponent, Star
 		SYSTEM_DISCHARGE_STATUS(Doc.of(BOOLEAN) //
 				.accessMode(READ_ONLY) //
 				.text("System discharge status")),
-		SYSTEM_FAN_WARN(Doc.of(Level.WARNING) //
-				.accessMode(READ_ONLY) //
-				.text("System fan warning")),
 		BATTERY_CELL_UNDER_VOLTAGE_PROTECTION(Doc.of(Level.FAULT) //
 				.accessMode(READ_ONLY) //
 				.text("Battery cell under voltage protection")),

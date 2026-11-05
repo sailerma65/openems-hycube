@@ -22,7 +22,7 @@ public class InitWriteRegisters extends StateHandler<State, Context> {
 	
 	private int index = 0;
 	
-	private static final int WAIT_TIME = 10;
+	private static final int WAIT_TIME = 5;
 	
 	@Override
 	protected void onEntry(Context context) throws OpenemsNamedException {
